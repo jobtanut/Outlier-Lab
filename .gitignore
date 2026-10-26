@@ -1,0 +1,20 @@
+# Local data: triage history and private channel analytics
+data/*
+!data/.gitkeep
+
+# Credentials (normally kept in ~/.config/content-scout/, never in the repo)
+.env
+client_secret*.json
+token.json
+
+# Python
+__pycache__/
+*.pyc
+
+# OS / editor clutter
+.DS_Store
+.Rhistory
+
+# Raw screenshots (use the resized copy in docs/)
+/First-draft sc.png
+/Screenshot*.png

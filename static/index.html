@@ -1,0 +1,1010 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Outlier Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* Palette: #006199 deep blue · #8ACFF8 sky · #F4EB6C lemon · #FFD444 gold */
+  :root {
+    --bg: #f3f7fa; --surface: #ffffff; --surface-2: #e6f0f6; --border: #d3e2ec;
+    --text: #0f2230; --muted: #5b6f7d; --accent: #006199; --accent-soft: #dceefa; --accent-ink: #006199;
+    --highlight: #ffd444; --highlight-soft: #f4eb6c; --on-highlight: #2b2300;
+    --good: #15803d; --good-soft: #dcfce7; --warn: #a16207; --warn-soft: #fef3c7;
+    --bad: #b91c1c; --bad-soft: #fee2e2; --focus: #006199;
+    --shadow: 0 1px 2px rgba(0,40,70,.06), 0 4px 16px rgba(0,40,70,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0c1720; --surface: #12212c; --surface-2: #1a2c39; --border: #263b4a;
+      --text: #eef5fa; --muted: #93a8b7; --accent: #006199; --accent-soft: #0f3550; --accent-ink: #8acff8;
+      --highlight: #ffd444; --highlight-soft: #f4eb6c; --on-highlight: #2b2300;
+      --good: #4ade80; --good-soft: #14321f; --warn: #facc15; --warn-soft: #362c0c;
+      --bad: #f87171; --bad-soft: #3a1717; --focus: #8acff8;
+      --shadow: 0 1px 2px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0c1720; --surface: #12212c; --surface-2: #1a2c39; --border: #263b4a;
+    --text: #eef5fa; --muted: #93a8b7; --accent: #006199; --accent-soft: #0f3550; --accent-ink: #8acff8;
+    --highlight: #ffd444; --highlight-soft: #f4eb6c; --on-highlight: #2b2300;
+    --good: #4ade80; --good-soft: #14321f; --warn: #facc15; --warn-soft: #362c0c;
+    --bad: #f87171; --bad-soft: #3a1717; --focus: #8acff8;
+    --shadow: 0 1px 2px rgba(0,0,0,.35);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 Inter, "IBM Plex Sans Thai", system-ui, sans-serif; }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+
+  header { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+  .bar { max-width: 1400px; margin: 0 auto; padding: 14px 20px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .brand { font-weight: 700; font-size: 17px; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; }
+  .brand i { width: 10px; height: 10px; border-radius: 50%; background: var(--highlight); display: inline-block; }
+  .tabs { display: flex; gap: 4px; background: var(--surface-2); padding: 3px; border-radius: 10px; }
+  .tab { border: 0; background: transparent; padding: 6px 12px; border-radius: 8px; color: var(--muted); font-weight: 500; }
+  .tab.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+  .tab b { font-weight: 600; margin-left: 4px; color: var(--muted); font-size: 12px; }
+  .spacer { flex: 1; }
+  .ctl { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 6px 10px; }
+  .btn { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 7px 12px; font-weight: 500; }
+  a.btn { display: inline-block; text-decoration: none; }
+  .btn:hover { border-color: var(--muted); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* the hidden attribute must win over display rules (e.g. #meView/.grid use display: grid) */
+  [hidden] { display: none !important; }
+  /* --- My channel view --- */
+  #meView { display: grid; gap: 18px; }
+  .me-sub { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .04em; margin-bottom: -8px; }
+  .rbtn { border: 0; background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; padding: 2px 6px;
+    border-radius: 6px; cursor: pointer; text-transform: none; letter-spacing: 0; }
+  .rbtn span { display: inline-block; font-size: 14px; }
+  .rbtn:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+  .rbtn:disabled { cursor: default; opacity: .5; }
+  .rbtn.busy { opacity: 1; color: var(--accent-ink); }
+  .rbtn.busy span { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .me-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .me-head h2 { margin: 0; font-size: 20px; }
+  .me-head .spacer { flex: 1; }
+  .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .kpi b { display: block; font-size: 22px; letter-spacing: -.01em; }
+  .kpi span { color: var(--muted); font-size: 12px; }
+  .panelbox { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; min-width: 0; }
+  .panelbox h3 { margin: 0 0 10px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .panelbox h3 small { color: var(--muted); font-weight: 400; font-size: 12px; }
+  .vrow { display: grid; grid-template-columns: 96px minmax(0, 1fr) 78px 64px 92px 56px 52px; gap: 12px; align-items: center;
+    padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; }
+  .vrow.head { border-top: 0; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; padding-top: 0; }
+  .vrow img { width: 96px; aspect-ratio: 16/9; object-fit: cover; border-radius: 6px; display: block; background: var(--surface-2); }
+  .vrow .vt { font-weight: 500; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: inherit; text-decoration: none; }
+  .vrow .vt:hover { text-decoration: underline; }
+  .vrow .vsub { color: var(--muted); font-size: 12px; }
+  .vrow .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .badge { display: inline-block; padding: 2px 7px; border-radius: 6px; font-weight: 700; font-size: 12.5px;
+    background: var(--surface-2); color: var(--text); font-variant-numeric: tabular-nums; }
+  .badge.lift { background: var(--accent-soft); color: var(--accent-ink); }
+  .badge.t10 { background: #dc2626; color: #fff; } .badge.t50 { background: #7c3aed; color: #fff; } .badge.t100 { background: #2563eb; color: #fff; }
+  .profile { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+  .brow { display: grid; grid-template-columns: minmax(0, 150px) minmax(0, 1fr) 56px; gap: 10px; align-items: center; font-size: 13px; padding: 3px 0; }
+  .blabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .btrack { height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+  .btrack i { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+  .bval { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .wrow { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--border); font-size: 13px; flex-wrap: wrap; }
+  .wrow:first-of-type { border-top: 0; }
+  .wrow .wname { font-weight: 600; }
+  .wrow .wmeta { color: var(--muted); font-size: 12px; flex-basis: 100%; }
+  .wrow button { margin-left: auto; font-size: 12px; padding: 3px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+  .subhead { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 12px 0 4px; }
+  @media (max-width: 900px) {
+    .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .profile { grid-template-columns: minmax(0, 1fr); }
+    .vrow { grid-template-columns: 72px minmax(0, 1fr) 70px 52px; gap: 10px; }
+    .vrow img { width: 72px; }
+    .vrow .opt { display: none; }
+  }
+  /* compact header controls */
+  /* The header is always one line. fitBar() adds these one at a time (in FIT_STEPS order) until it fits:
+     c1 icon labels off · c2 scope picker shrinks to an arrow · c3 brand text off ·
+     c4 tab counts off · c5 tighter spacing · c6 tabs may shrink and clip */
+  .bar { padding: 10px 20px; gap: 10px; flex-wrap: nowrap; }
+  .bar > * { flex-shrink: 0; }
+  .bar .tab { padding: 5px 10px; white-space: nowrap; }
+  .bar.c1 .icon-btn .lbl { display: none; }
+  .bar.c2 .run .scope { width: 32px; padding: 0; color: transparent; background-position: center; }
+  .bar.c3 .brand { font-size: 0; gap: 0; }
+  .bar.c4 .tab b { display: none; }
+  .bar.c5 { gap: 6px; padding: 10px 12px; }
+  .bar.c5 .tab { padding: 5px 7px; }
+  .bar.c5 .run .btn { padding: 6px 9px; }
+  .bar.c5 .icon-btn { padding: 6px 6px; }
+  /* last resort (phones): the tabs scroll sideways inside their pill */
+  .bar.c6 .tabs { flex-shrink: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .bar.c6 .tabs::-webkit-scrollbar { display: none; }
+  .icon-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid transparent; background: transparent;
+    border-radius: 8px; padding: 6px 9px; color: var(--muted); font-weight: 500; }
+  .icon-btn:hover, .icon-btn[aria-expanded="true"] { background: var(--surface-2); color: var(--text); }
+  .icon-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+  .icon-btn svg circle { fill: var(--bg); }
+  .count:empty { display: none; }
+  .count { background: var(--highlight); color: var(--on-highlight); border-radius: 999px; padding: 0 6px; font-size: 11px; font-weight: 700; line-height: 17px; }
+  .panel { max-width: 1400px; margin: 0 auto 10px; padding: 12px 20px; border-top: 1px solid var(--border); display: grid; gap: 10px; }
+  .panel[hidden] { display: none; }
+  .prow { display: flex; gap: 8px 12px; align-items: center; flex-wrap: wrap; }
+  .field { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .field .ctl { padding: 4px 8px; font-size: 13px; }
+  .foot { justify-content: space-between; color: var(--muted); font-size: 12px; }
+  .foot-actions { display: inline-flex; gap: 14px; }
+  .link.danger { color: var(--bad); }
+  .link { border: 0; background: none; color: var(--accent-ink); font-weight: 500; font-size: 12px; padding: 0; }
+  .flabel { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 4px 11px; font-size: 12.5px; font-weight: 500; color: var(--muted); }
+  .chip:hover { border-color: var(--muted); }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .range { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+  .range input { width: 110px; padding: 4px 9px; font-size: 12.5px; }
+  .range input.bad { border-color: var(--bad); }
+  @media (max-width: 640px) {
+    .panel { padding: 12px 16px; } .range input { width: 96px; }
+  }
+  .run { display: flex; margin-left: auto; }
+  .run .btn { border-radius: 8px 0 0 8px; padding: 6px 12px; white-space: nowrap; }
+  .run .scope { appearance: none; -webkit-appearance: none; border: 0; border-left: 1px solid rgba(255,255,255,.35);
+    border-radius: 0 8px 8px 0; color: #fff; font-weight: 500; font-size: 12px; padding: 0 30px 0 14px; cursor: pointer;
+    background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='white' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 12px center; }
+  .run .scope option { color: var(--text); background: var(--surface); padding: 6px 10px; }
+  .run .scope:disabled { opacity: .6; }
+  .btn.primary:disabled { opacity: .6; cursor: wait; }
+  .status-line { max-width: 1400px; margin: 0 auto; padding: 0 20px 10px; color: var(--muted); font-size: 12px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .status-line .err { color: var(--bad); }
+
+  main { max-width: 1400px; margin: 0 auto; padding: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 18px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+    box-shadow: var(--shadow); display: flex; flex-direction: column; outline: 2px solid transparent; outline-offset: 2px; }
+  .card.sel { outline-color: var(--focus); }
+  .thumb { position: relative; aspect-ratio: 16/9; background: var(--surface-2); display: block; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .score { position: absolute; left: 10px; top: 10px; background: rgba(0,0,0,.78); color: #fff;
+    border-radius: 8px; padding: 4px 9px; font-weight: 700; font-size: 15px; letter-spacing: -.01em; }
+  .score.t10 { background: #dc2626; }
+  .score.t50 { background: #7c3aed; }
+  .score.t100 { background: #2563eb; }
+  .score small { font-weight: 500; opacity: .7; font-size: 11px; margin-left: 4px; }
+  .dur { position: absolute; right: 10px; bottom: 10px; background: rgba(0,0,0,.78); color: #fff; border-radius: 6px; padding: 2px 6px; font-size: 12px; }
+  .body { padding: 12px 14px 4px; flex: 1; }
+  .title { font-weight: 600; font-size: 15px; line-height: 1.35; margin: 0 0 6px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .title a { color: inherit; text-decoration: none; }
+  .title a:hover { text-decoration: underline; }
+  .meta { color: var(--muted); font-size: 12.5px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+  .meta + .meta { margin-top: 4px; }
+  .pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+  .pill.strong { background: var(--accent-soft); color: var(--accent-ink); }
+  .actions { display: flex; gap: 6px; padding: 10px 14px 14px; }
+  .actions button { flex: 1; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 7px 0; font-weight: 500; font-size: 13px; }
+  .actions .p:hover { background: var(--good-soft); border-color: var(--good); color: var(--good); }
+  .actions .l:hover { background: var(--warn-soft); border-color: var(--warn); color: var(--warn); }
+  .actions .k:hover { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
+  .actions kbd { font: 11px ui-monospace, monospace; opacity: .55; margin-left: 4px; }
+
+  .empty { text-align: center; color: var(--muted); padding: 80px 20px; }
+  .empty h2 { color: var(--text); font-size: 18px; margin: 0 0 6px; }
+  .keys { color: var(--muted); font-size: 12px; margin-top: 24px; text-align: center; }
+  .keys kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; background: var(--surface); }
+
+  /* watchlist drawer */
+  .drawer { position: fixed; inset: 0 0 0 auto; width: min(440px, 100%); background: var(--surface); border-left: 1px solid var(--border);
+    z-index: 10; transform: translateX(100%); transition: transform .2s; display: flex; flex-direction: column; box-shadow: -8px 0 30px rgba(0,0,0,.12); }
+  .drawer.open { transform: none; }
+  .drawer header { position: static; background: none; backdrop-filter: none; padding: 16px 18px; display: flex; align-items: center; justify-content: space-between; }
+  .drawer h3 { margin: 0; font-size: 16px; }
+  .drawer .list { overflow: auto; padding: 8px 18px 18px; flex: 1; }
+  .ch { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+  .ch.off { opacity: .5; }
+  .ch-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .ch-name { font-weight: 600; }
+  .ch-stats { color: var(--muted); font-size: 12px; margin-top: 4px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .ch-ctl { display: flex; gap: 6px; margin-top: 8px; }
+  .ch-ctl select, .ch-ctl button { font-size: 12px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+  .add { padding: 0 18px 14px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .add input { flex: 1 1 200px; }
+  .add .msg { flex-basis: 100%; font-size: 12px; color: var(--bad); }
+  .drawer section { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+  .drawer section[hidden] { display: none; }
+  .dtabs { display: flex; gap: 4px; background: var(--surface-2); padding: 3px; border-radius: 10px; margin: 0 18px 14px; }
+  .dtabs .tab { flex: 1; }
+  .hint { color: var(--muted); font-size: 12px; margin: 0 18px 10px; }
+  .kw { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; margin-bottom: 6px; }
+  .kw.off { opacity: .5; }
+  .kw .term { flex: 1; font-weight: 500; }
+  .kw button { font-size: 12px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+  .kw-group { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 12px 0 6px; }
+  .ch-ctl button.danger { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
+  .pill.subs-blue { background: #8acff8; color: #003a5c; }
+  .pill.subs-gold { background: var(--highlight); color: var(--on-highlight); }
+  .pill.format { background: color-mix(in srgb, #0d9488 18%, transparent); color: #14b8a6; }
+  .pill.manual { background: color-mix(in srgb, var(--muted) 18%, transparent); color: var(--text); }
+  .panel .grow { flex: 1 1 260px; min-width: 0; }
+  .pill.fit-hi { background: var(--highlight); color: var(--on-highlight); }
+  .pill.fit-mid { background: var(--accent-soft); color: var(--accent-ink); }
+  .pill.fit-lo { background: var(--surface-2); color: var(--muted); }
+  .pill.outdated { background: var(--bad-soft); color: var(--bad); }
+  .pill.search { background: color-mix(in srgb, var(--focus) 15%, transparent); color: var(--focus); }
+  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.25); z-index: 9; display: none; }
+  .scrim.open { display: block; }
+
+  @media (max-width: 640px) {
+    main { padding: 16px; }
+    .status-line { padding: 0 16px 10px; }
+    .grid { grid-template-columns: 1fr; }
+    .tab { padding: 6px 8px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="brand"><i></i>Outlier Lab</div>
+    <div class="tabs" id="tabs"></div>
+    <div class="run">
+      <button class="btn primary" id="runScout">Run scout</button>
+      <select class="scope" id="scoutScope" aria-label="What to scout" title="What to scout">
+        <option value="all">All</option>
+        <option value="channels">Channels</option>
+        <option value="keywords">Topics</option>
+        <option value="formats">Formats</option>
+      </select>
+    </div>
+    <button class="icon-btn" id="toggleAdd" aria-expanded="false" aria-controls="addPanel" title="Add a video by link">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
+      <span class="lbl">Add video</span>
+    </button>
+    <button class="icon-btn" id="toggleFilters" aria-expanded="false" aria-controls="filterPanel" title="Filters &amp; sort">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h9M15 5h2M3 10h3M9 10h8M3 15h7M13 15h4"/><circle cx="13.5" cy="5" r="1.6"/><circle cx="7.5" cy="10" r="1.6"/><circle cx="11.5" cy="15" r="1.6"/></svg>
+      <span class="lbl">Filters</span><b class="count" id="filterCount"></b>
+    </button>
+    <button class="icon-btn" id="openWatch" title="Channels &amp; keywords">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5h12M4 10h12M4 15h7"/></svg>
+      <span class="lbl">Sources</span><b class="count" id="sugBadge"></b>
+    </button>
+  </div>
+  <form class="panel" id="addPanel" hidden>
+    <div class="prow">
+      <input class="ctl grow" id="videoUrl" placeholder="Paste a YouTube video or playlist link (or press ⌘V anywhere)">
+      <button class="btn primary" type="submit" id="addVideoBtn">Add &amp; score</button>
+    </div>
+    <div class="prow foot"><span id="videoMsg">Scores it against that channel's average. Added even if it's below the bar.</span></div>
+  </form>
+  <div class="panel" id="filterPanel" hidden>
+    <div class="prow">
+      <label class="field"><span>Sort</span>
+        <select class="ctl" id="sort">
+          <option value="foryou">For you (fit × outlier)</option>
+          <option value="fit">Audience fit</option>
+          <option value="score">Highest score</option>
+          <option value="ratio">Furthest above bar</option>
+          <option value="views">Most views</option>
+          <option value="vph">Views per hour</option>
+          <option value="newest">Newest</option>
+        </select>
+      </label>
+      <label class="field"><span>Source</span>
+        <select class="ctl" id="srcFilter">
+          <option value="">All</option>
+          <option value="Watchlist">Watchlist</option>
+          <option value="Search">Topic search</option>
+          <option value="Format">Format search</option>
+          <option value="Manual">Added by link</option>
+        </select>
+      </label>
+      <label class="field"><span>Channel</span><select class="ctl" id="chFilter"></select></label>
+    </div>
+    <div class="prow">
+      <span class="flabel">Subs</span>
+      <div class="chips" id="subsChips"></div>
+      <div class="range">
+        <input class="ctl" id="subsMin" placeholder="Min e.g. 50K" inputmode="decimal" aria-label="Minimum subscribers">
+        <span>–</span>
+        <input class="ctl" id="subsMax" placeholder="Max e.g. 1M" inputmode="decimal" aria-label="Maximum subscribers">
+      </div>
+    </div>
+    <div class="prow foot">
+      <span id="rules"></span>
+      <span class="foot-actions">
+        <button class="link danger" id="removeOutdated" hidden></button>
+        <button class="link" id="resetFilters">Reset filters</button>
+      </span>
+    </div>
+  </div>
+  <div class="status-line" id="statusLine"></div>
+</header>
+
+<main>
+  <section id="meView" hidden></section>
+  <div class="grid" id="grid"></div>
+  <div class="keys" id="keys">
+    <kbd>←</kbd> <kbd>→</kbd> select · <kbd>P</kbd> promote · <kbd>L</kbd> park · <kbd>X</kbd> kill · <kbd>U</kbd> back to New · <kbd>O</kbd> open video
+  </div>
+</main>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-label="Channels and keywords">
+  <header><h3>Channels &amp; keywords</h3><button class="btn" id="closeWatch">Close</button></header>
+  <div class="dtabs" id="dtabs">
+    <button class="tab on" data-dtab="watch">Watchlist</button>
+    <button class="tab" data-dtab="sug">Suggested<b id="sugCount">0</b></button>
+    <button class="tab" data-dtab="kw">Keywords</button>
+    <button class="tab" data-dtab="me">My channel</button>
+  </div>
+  <section data-panel="watch">
+    <form class="add" id="addForm">
+      <input class="ctl" id="addInput" placeholder="Channel URL, @handle or UC… ID">
+      <select class="ctl" id="addGroup"><option>Direct</option><option>Adjacent</option><option>Global</option></select>
+      <button class="btn primary" type="submit">Add</button>
+      <div class="msg" id="addMsg"></div>
+    </form>
+    <div class="list" id="chList"></div>
+  </section>
+  <section data-panel="sug" hidden>
+    <p class="hint">Channels outside your watchlist that search found with 2+ outliers, or one at 2× its bar or more.</p>
+    <div class="list" id="sugList"></div>
+  </section>
+  <section data-panel="me" hidden>
+    <p class="hint">Connect your own channel (read-only) so Outlier Lab can learn its private data: CTR, retention, search terms and traffic. Your login stays on this Mac.</p>
+    <div class="list" id="meBox"></div>
+  </section>
+  <section data-panel="kw" hidden>
+    <p class="hint">Topics find your subject in any channel. Formats find title patterns from any niche, to borrow and flip. Each active one is one search per run (100 of your 10,000 daily units).</p>
+    <form class="add" id="kwForm">
+      <select class="ctl" id="kwKind"><option value="topic">Topic</option><option value="format">Format</option></select>
+      <input class="ctl" id="kwTerm" placeholder="Keyword">
+      <select class="ctl" id="kwLang"><option>TH</option><option>EN</option></select>
+      <input class="ctl" id="kwPillar" placeholder="Pillar" list="pillars" style="flex:0 1 120px">
+      <datalist id="pillars"></datalist>
+      <button class="btn primary" type="submit">Add</button>
+      <div class="msg" id="kwMsg"></div>
+    </form>
+    <div class="list" id="kwList"></div>
+  </section>
+</aside>
+
+<script>
+const STATUSES = ["New", "Promoted", "Parked", "Killed"];
+let S = { channels: [], signals: [], keywords: [], suggested: [], scout: {} };
+let tab = "New", sel = 0, poll = null;
+
+const $ = id => document.getElementById(id);
+const fmt = n => n == null ? "–" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "K" : String(Math.round(n));
+const ago = iso => { const d = Math.floor((Date.now() - new Date(iso)) / 864e5); return d === 0 ? "today" : d + "d ago"; };
+const dur = s => { const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+  return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(x).padStart(2, "0"); };
+// Average views per hour from publish to the scan that counted the views
+const vph = s => s.views / Math.max((new Date(s.updated) - new Date(s.published_at || s.published)) / 36e5, 1);
+const fmtRate = n => n >= 1e3 ? fmt(n) : n >= 10 ? String(Math.round(n)) : n.toFixed(1);
+// Saved videos (Promoted, Parked…) keep aging; past a year they're flagged
+const OUTDATED_DAYS = 365;
+const ageDays = s => Math.floor((Date.now() - new Date(s.published_at || s.published)) / 864e5);
+// Score badge color: 100×+ blue, 50×+ purple, 10×+ red, below that dark
+const tier = x => x >= 100 ? "t100" : x >= 50 ? "t50" : x >= 10 ? "t10" : "";
+// Subscriber label: 300K+ gold, 100K+ blue, smaller channels plain
+const subsPill = n => n >= 3e5 ? `<span class="pill subs-gold">${fmt(n)} subs</span>`
+  : n >= 1e5 ? `<span class="pill subs-blue">${fmt(n)} subs</span>` : `<span>${fmt(n)} subs</span>`;
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts,
+    body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || "Request failed");
+  S = data; render(); return data;
+}
+
+// --- subscriber range filter ---
+// Quick picks fill the min/max boxes; max is exclusive so ranges don't overlap
+const SUBS_PRESETS = [
+  ["All", "", ""], ["Under 10K", "", "10K"], ["10K–100K", "10K", "100K"],
+  ["100K–300K", "100K", "300K"], ["300K+", "300K", ""],
+];
+// "50k", "1.2M", "250000" → number; "" → null; anything else → NaN
+function parseSubs(text) {
+  const m = String(text).trim().replace(/,/g, "").match(/^(\d+(?:\.\d+)?)\s*([km]?)$/i);
+  if (!String(text).trim()) return null;
+  if (!m) return NaN;
+  return +m[1] * ({ k: 1e3, m: 1e6 }[m[2].toLowerCase()] || 1);
+}
+function subsRange() {
+  const lo = parseSubs($("subsMin").value), hi = parseSubs($("subsMax").value);
+  $("subsMin").classList.toggle("bad", Number.isNaN(lo));
+  $("subsMax").classList.toggle("bad", Number.isNaN(hi));
+  return [Number.isNaN(lo) ? null : lo, Number.isNaN(hi) ? null : hi];
+}
+function renderChips() {
+  const [lo, hi] = subsRange();
+  $("subsChips").innerHTML = SUBS_PRESETS.map(([label, a, b], i) => {
+    const on = parseSubs(a) === lo && parseSubs(b) === hi;
+    return `<button class="chip ${on ? "on" : ""}" data-preset="${i}">${label}</button>`;
+  }).join("");
+}
+function saveSubs() {
+  try { localStorage.setItem("subsRange", JSON.stringify([$("subsMin").value, $("subsMax").value])); } catch {}
+}
+
+
+// --- Audience fit: how well an outlier matches *your* viewers (0–100) ---
+// Built from the My channel data: what viewers search, which topics your own outliers
+// are about, which formats they reward, and which channels they also watch.
+// Topic clusters are stems matched inside titles (Thai has no spaces, so substrings).
+const FIT_CLUSTERS = {
+  "money & freelance": ["หาเงิน", "รายได้", "ฟรีแลนซ์", "freelance", "fastwork", "รวย", "เงิน", "money", "income",
+    "side hustle", "งานออนไลน์", "อาชีพเสริม", "ลงทุน", "invest", "wealth", "rich", "business", "ธุรกิจ"],
+  "discipline & self-change": ["วินัย", "monk mode", "discipline", "consisten", "นิสัย", "habit", "เปลี่ยนตัวเอง",
+    "เปลี่ยนชีวิต", "พัฒนาตัวเอง", "self improvement", "journal", "comfort zone", "มั่นใจ", "confiden"],
+  "time & focus": ["บริหารเวลา", "เวลา", "time", "focus", "โฟกัส", "สมาธิ", "productiv", "deep work", "flow",
+    "social media", "detox", "โซเชียล", "dopamine", "โดพามีน"],
+  "learning & systems": ["เรียน", "learn", "study", "อ่าน", "สมอง", "brain", "ระบบ", "system", "เป้าหมาย", "goal"],
+};
+const FIT_EXPERIMENT = /ลอง|ผมลอง|\d+\s*(วัน|ปี|เดือน|days?|months?|years?)|i tried|tried|how i |experiment/i;
+const FIT_HOWTO = /วิธี|how to|\d+\s*(วิธี|ข้อ|นิสัย|สิ่ง|ways|things|habits|tips|rules)|ขั้นตอน|step/i;
+const FIT_ABSTRACT = /mindset|principle|ความลับ|ความฝัน|หลงทาง|ชนะตัวเอง|philosoph/i;
+// Scripts your Thai/English audience can't read (Indic, Arabic, CJK, Cyrillic, Korean)
+const FIT_FOREIGN = /[\u0900-\u0DFF\u0600-\u06FF\u3040-\u30FF\u4E00-\u9FFF\u0400-\u04FF\uAC00-\uD7AF]/;
+let FIT = null;  // built from M once My channel data is loaded
+
+function buildFit() {
+  if (!M || !M.videos) { FIT = null; return; }
+  const has = (t, stems) => stems.some(w => t.toLowerCase().includes(w.toLowerCase()));
+  // Cluster weight = search demand + proof from your own outliers, normalised to the strongest
+  const raw = {};
+  for (const [c, stems] of Object.entries(FIT_CLUSTERS)) {
+    const demand = (M.search_terms || []).filter(r => has(r.insightTrafficSourceDetail, stems)).reduce((a, r) => a + r.views, 0);
+    const proof = M.videos.filter(v => v.score >= 2 && has(v.title, stems)).reduce((a, v) => a + Math.log2(v.score), 0);
+    raw[c] = { demand, proof };
+  }
+  const maxD = Math.max(1, ...Object.values(raw).map(r => r.demand)), maxP = Math.max(1, ...Object.values(raw).map(r => r.proof));
+  const weights = Object.fromEntries(Object.entries(raw).map(([c, r]) => [c, 0.5 * r.demand / maxD + 0.5 * r.proof / maxP]));
+  const top = Math.max(...Object.values(weights));
+  Object.keys(weights).forEach(c => weights[c] /= top);
+  FIT = { weights, has, terms: (M.search_terms || []).slice(0, 25).map(r => r.insightTrafficSourceDetail),
+    channels: new Set((M.suggested_from || []).map(c => c.channel_id)) };
+}
+
+// {score, reasons[]}; null when there's no channel data yet
+function audienceFit(s) {
+  if (!FIT) return null;
+  const t = s.title, reasons = [];
+  let topic = 0, topicName = "";
+  for (const [c, stems] of Object.entries(FIT_CLUSTERS))
+    if (FIT.has(t, stems) && FIT.weights[c] > topic) { topic = FIT.weights[c]; topicName = c; }
+  if (topicName) reasons.push(`topic: ${topicName}`);
+  const term = FIT.terms.find(q => t.toLowerCase().includes(q.toLowerCase()));
+  const search = term ? 1 : 0;
+  if (term) reasons.push(`viewers search “${term}”`);
+  let format = 0.4;
+  if (FIT_EXPERIMENT.test(t)) { format = 1; reasons.push("experiment format, your best performer"); }
+  else if (FIT_HOWTO.test(t)) { format = 0.75; reasons.push("concrete how-to"); }
+  else if (FIT_ABSTRACT.test(t)) { format = 0; reasons.push("abstract concept title: flops on your channel"); }
+  const watched = FIT.channels.has(s.channel_id) ? 1 : 0;
+  if (watched) reasons.push("your viewers already watch this channel");
+  let score = Math.round(100 * (0.45 * topic + 0.2 * search + 0.2 * format + 0.15 * watched));
+  if (FIT_FOREIGN.test(t)) { score = Math.round(score * 0.3); reasons.push("title in a language your viewers don't read"); }
+  return { score, reasons };
+}
+// For you = fit × how far it clears its bar (log, so 1000× doesn't drown everything)
+const forYou = s => { const f = audienceFit(s); return f ? f.score / 100 * (1 + Math.log2(Math.max(s.score / s.min_score, 1))) : 0; };
+const fitPill = s => {
+  const f = audienceFit(s); if (!f) return "";
+  const cls = f.score >= 60 ? "fit-hi" : f.score >= 35 ? "fit-mid" : "fit-lo";
+  return `<span class="pill ${cls}" title="${esc(f.reasons.join(" · ") || "No match with your audience profile")}">Fit ${f.score}</span>`;
+};
+
+function visible() {
+  const ch = $("chFilter").value, src = $("srcFilter").value, sort = $("sort").value;
+  const [lo, hi] = subsRange();
+  const list = S.signals.filter(s => s.status === tab && (!ch || s.channel_id === ch) && (!src || s.source === src)
+    && (lo == null || s.subscribers >= lo) && (hi == null || s.subscribers < hi));
+  const key = { score: s => s.score, ratio: s => s.score / s.min_score, views: s => s.views, vph, foryou: forYou,
+    fit: s => audienceFit(s)?.score ?? -1,
+    newest: s => +new Date(s.published) }[sort];
+  return list.sort((a, b) => key(b) - key(a));
+}
+
+function render() {
+  const counts = Object.fromEntries(STATUSES.map(st => [st, S.signals.filter(s => s.status === st).length]));
+  $("tabs").innerHTML = STATUSES.map(st =>
+    `<button class="tab ${st === tab ? "on" : ""}" data-tab="${st}">${st}<b>${counts[st]}</b></button>`).join("")
+    + `<button class="tab ${tab === "me" ? "on" : ""}" data-tab="me">My channel</button>`;
+  const meMode = tab === "me";
+  $("meView").hidden = !meMode; $("grid").hidden = meMode; $("keys").hidden = meMode;
+  if (meMode) renderMeView();
+
+  // channel filter lists every channel that has a card, watched or not
+  const cur = $("chFilter").value;
+  const names = new Map(S.signals.map(s => [s.channel_id, s.channel]));
+  S.channels.forEach(c => names.set(c.id, c.title || c.id));
+  $("chFilter").innerHTML = `<option value="">All channels</option>` + [...names].sort((a, b) => a[1].localeCompare(b[1]))
+    .map(([id, t]) => `<option value="${id}" ${id === cur ? "selected" : ""}>${esc(t)}</option>`).join("");
+
+  const sc = S.scout || {};
+  $("runScout").disabled = $("scoutScope").disabled = !!sc.running;
+  $("runScout").textContent = sc.running ? "Scouting…" : "Run scout";
+  const active = S.channels.filter(c => c.active).length;
+  const kws = S.keywords.filter(k => k.active).length;
+  $("statusLine").innerHTML = [
+    sc.running ? esc(sc.message) : sc.last_run
+      ? `Last run ${new Date(sc.last_run).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} · ${esc(sc.message)} · ~${sc.units} units`
+      : "Not run yet",
+    sc.error ? `<span class="err">${esc(sc.error)}</span>` : ""
+  ].filter(Boolean).join(" · ");
+  $("rules").textContent = `${active} channels · ${kws} keywords · last ${S.lookback_days} days · `
+    + `bar 3× at 300K+ subs, 5× at 100K+, 10× below`;
+  const [lo, hi] = subsRange();
+  $("filterCount").textContent = [$("srcFilter").value, $("chFilter").value, lo ?? hi].filter(v => v != null && v !== "").length || "";
+
+  renderChips();
+  const items = visible();
+  sel = Math.min(sel, Math.max(items.length - 1, 0));
+  $("grid").innerHTML = items.length ? items.map((s, i) => card(s, i)).join("") :
+    `<div class="empty" style="grid-column:1/-1"><h2>${tab === "New" ? "Nothing new to triage" : "Nothing here yet"}</h2>
+     ${tab === "New" ? "Run the scout to pull fresh outliers from your watchlist and keyword searches." : ""}</div>`;
+
+  $("sugBadge").textContent = S.suggested.length || "";
+  renderOutdatedButton();
+  fitBar();
+  $("sugCount").textContent = S.suggested.length;
+  renderWatchlist();
+  renderSuggested();
+  renderKeywords();
+}
+
+function renderSuggested() {
+  $("sugList").innerHTML = S.suggested.length ? S.suggested.map(c => `
+    <div class="ch" data-sug="${c.id}">
+      <div class="ch-top">
+        <a class="ch-name" href="https://www.youtube.com/channel/${c.id}" target="_blank" rel="noopener" style="color:inherit">${esc(c.title)}</a>
+        <span class="pill strong">${c.hits} outlier${c.hits > 1 ? "s" : ""} · best ${c.best_score.toFixed(2)}×</span>
+      </div>
+      <div class="ch-stats">
+        ${subsPill(c.subscribers)}
+        <span>avg ${fmt(c.median_views)}</span>
+        <span>bar ${c.min_score}×</span>
+      </div>
+      <div class="ch-ctl">
+        <select data-grp><option>Direct</option><option selected>Adjacent</option><option>Global</option></select>
+        <button data-add>Add to watchlist</button>
+        <button data-dismiss>Dismiss</button>
+      </div>
+    </div>`).join("") : `<p class="hint">No suggestions yet. They appear after scout runs find repeat outliers.</p>`;
+}
+
+function renderKeywords() {
+  const topics = S.keywords.filter(k => k.kind !== "format"), formats = S.keywords.filter(k => k.kind === "format");
+  const pillars = [...new Set(topics.map(k => k.pillar || "No pillar"))];
+  $("pillars").innerHTML = pillars.map(p => `<option value="${esc(p)}">`).join("");
+  const row = k => `
+      <div class="kw ${k.active ? "" : "off"}" data-kw="${k.id}">
+        <span class="pill">${k.lang}</span><span class="term">${esc(k.term)}</span>
+        <button data-toggle>${k.active ? "Pause" : "Resume"}</button>
+        <button data-remove>Remove</button>
+      </div>`;
+  $("kwList").innerHTML =
+    (formats.length ? `<div class="kw-group">Formats · any niche</div>` + formats.map(row).join("") : "") +
+    pillars.map(p => `<div class="kw-group">Topic · ${esc(p)}</div>` +
+      topics.filter(k => (k.pillar || "No pillar") === p).map(row).join("")).join("");
+}
+
+function sourceTag(s) {
+  if (s.source === "Search") return `<span class="pill search">Search · ${esc(s.keyword)}</span>`;
+  if (s.source === "Format") return `<span class="pill format">Format · ${esc(s.keyword)}</span>`;
+  if (s.source === "Manual") return `<span class="pill manual">${s.keyword ? "From playlist · " + esc(s.keyword) : "Added by link"}</span>`
+    + (s.score < s.min_score ? ` <span class="pill">Below bar</span>` : "");
+  return `<span class="pill">${esc(s.grp || "Watchlist")}</span>`;
+}
+
+// Relative performance, spelled out on hover: views against this channel's own average
+// from the same period, so 1M on a 500K channel (2×) beats 2M on a 5M channel (0.4×)
+function scoreMath(s) {
+  const n = x => Math.round(x).toLocaleString("en-US");
+  return `${n(s.views)} views ÷ ${n(s.median_views)} channel avg (same period) = ${s.score.toFixed(2)}×`
+    + ` · needs ${s.min_score}× at ${fmt(s.subscribers)} subs`;
+}
+
+function card(s, i) {
+  const ratio = s.score / s.min_score;
+  const actions = s.status === "New"
+    ? `<button class="p" data-act="Promoted">Promote<kbd>P</kbd></button>
+       <button class="l" data-act="Parked">Park<kbd>L</kbd></button>
+       <button class="k" data-act="Killed">Kill<kbd>X</kbd></button>`
+    : `<button data-act="New">Back to New<kbd>U</kbd></button>`;
+  return `<article class="card ${i === sel ? "sel" : ""}" data-id="${s.video_id}" data-i="${i}">
+    <a class="thumb" href="${s.url}" target="_blank" rel="noopener">
+      <img loading="lazy" src="https://i.ytimg.com/vi/${s.video_id}/mqdefault.jpg" alt="">
+      <span class="score ${tier(s.score)}" title="${scoreMath(s)}">${s.score.toFixed(2)}×<small>bar ${s.min_score}×</small></span>
+      <span class="dur">${dur(s.seconds)}</span>
+    </a>
+    <div class="body">
+      <h3 class="title"><a href="${s.url}" target="_blank" rel="noopener">${esc(s.title)}</a></h3>
+      <div class="meta">
+        <span><b>${esc(s.channel)}</b></span>
+        ${subsPill(s.subscribers)}
+        <span>${fmt(s.views)} views</span>
+      </div>
+      <div class="meta">
+        <span>avg ${fmt(s.median_views)}</span>
+        <span>${ageDays(s)} days</span>
+      </div>
+      <div class="meta">
+        ${fitPill(s)}
+        <span><b>${fmtRate(vph(s))}</b> views/hr</span>
+        ${ageDays(s) > OUTDATED_DAYS ? `<span class="pill outdated">Outdated</span>` : ""}
+        ${ratio >= 2 ? `<span class="pill strong">${ratio.toFixed(1)}× over bar</span>` : ""}
+      </div>
+      <div class="meta">
+        ${sourceTag(s)}
+      </div>
+    </div>
+    <div class="actions">${actions}</div>
+  </article>`;
+}
+
+function renderWatchlist() {
+  $("chList").innerHTML = S.channels.map(c => `
+    <div class="ch ${c.active ? "" : "off"}" data-ch="${c.id}">
+      <div class="ch-top">
+        <span class="ch-name">${esc(c.title || c.id)}</span>
+        <span class="pill">bar ${c.min_score ?? "?"}×</span>
+      </div>
+      <div class="ch-stats">
+        ${subsPill(c.subscribers)}
+        <span>avg ${fmt(c.median_views)}</span>
+        <span>${c.baseline_videos ?? "–"} baseline videos${c.baseline_videos != null && c.baseline_videos < 10 ? " ⚠︎" : ""}</span>
+        <span>${c.last_checked ? "checked " + ago(c.last_checked) : "not checked yet"}</span>
+      </div>
+      <div class="ch-ctl">
+        <select data-grp>${["Direct", "Adjacent", "Global"].map(g => `<option ${g === c.grp ? "selected" : ""}>${g}</option>`).join("")}</select>
+        <button data-toggle>${c.active ? "Pause" : "Resume"}</button>
+        <button data-remove>Remove</button>
+      </div>
+    </div>`).join("");
+}
+
+async function setStatus(id, status) {
+  await api(`/api/signals/${id}`, { method: "POST", body: { status } });
+}
+
+// events
+$("tabs").onclick = e => {
+  const t = e.target.closest("[data-tab]"); if (!t) return;
+  tab = t.dataset.tab; sel = 0; render();
+  if (tab === "me" && !M) loadMe();
+};
+$("chFilter").onchange = $("srcFilter").onchange = $("sort").onchange = () => { sel = 0; render(); };
+$("subsChips").onclick = e => {
+  const c = e.target.closest("[data-preset]"); if (!c) return;
+  const [, a, b] = SUBS_PRESETS[+c.dataset.preset];
+  $("subsMin").value = a; $("subsMax").value = b; saveSubs(); sel = 0; render();
+};
+$("subsMin").oninput = $("subsMax").oninput = () => { saveSubs(); sel = 0; render(); };
+// Keep the header on one line: compact step by step until nothing overflows
+// order matters: spacing tightens before the name or tab counts disappear
+const FIT_STEPS = ["c1", "c2", "c5", "c3", "c4", "c6"];
+function fitBar() {
+  const bar = document.querySelector("header .bar");
+  bar.classList.remove(...FIT_STEPS);
+  for (const step of FIT_STEPS) {
+    if (bar.scrollWidth <= bar.clientWidth) break;
+    bar.classList.add(step);
+  }
+  const scope = $("scoutScope");
+  scope.title = "Scout: " + scope.options[scope.selectedIndex].text;
+}
+new ResizeObserver(fitBar).observe(document.querySelector("header .bar"));
+$("scoutScope").addEventListener("change", fitBar);
+
+function setPanel(open) {
+  $("filterPanel").hidden = !open;
+  $("toggleFilters").setAttribute("aria-expanded", open);
+  try { localStorage.setItem("filtersOpen", open ? "1" : ""); } catch {}
+}
+$("toggleFilters").onclick = () => setPanel($("filterPanel").hidden);
+try { setPanel(!!localStorage.getItem("filtersOpen")); } catch {}
+// --- add a video by link (from browsing YouTube's home page etc.) ---
+function setAddPanel(open) {
+  $("addPanel").hidden = !open;
+  $("toggleAdd").setAttribute("aria-expanded", open);
+  if (open) $("videoUrl").focus();
+}
+$("toggleAdd").onclick = () => setAddPanel($("addPanel").hidden);
+async function addVideo(url) {
+  $("videoMsg").textContent = "Scoring…"; $("addVideoBtn").disabled = true;
+  try {
+    const data = await api("/api/videos", { method: "POST", body: { url } });
+    $("videoMsg").textContent = data.message; $("videoUrl").value = "";
+    tab = "New"; render();
+    if (data.job) startPoll();  // playlist import runs in the background
+  } catch (err) { $("videoMsg").textContent = err.message; }
+  finally { $("addVideoBtn").disabled = false; }
+}
+$("addPanel").onsubmit = e => { e.preventDefault(); addVideo($("videoUrl").value); };
+// ⌘V / Ctrl+V a YouTube link anywhere outside a text box adds it straight away
+document.addEventListener("paste", e => {
+  if (e.target.matches("input, textarea")) return;
+  const text = e.clipboardData.getData("text");
+  if (!/youtu\.?be/.test(text)) return;
+  setAddPanel(true); $("videoUrl").value = text.trim(); addVideo(text);
+});
+$("kwKind").onchange = () => { $("kwPillar").hidden = $("kwKind").value === "format"; };
+
+// Remove every card older than OUTDATED_DAYS, in all tabs. Click twice to confirm.
+function renderOutdatedButton() {
+  const b = $("removeOutdated");
+  if (b.dataset.armed) return;
+  const n = S.signals.filter(s => ageDays(s) > OUTDATED_DAYS).length;
+  b.hidden = !n;
+  b.textContent = `Remove ${n} outdated`;
+}
+$("removeOutdated").onclick = async () => {
+  const b = $("removeOutdated");
+  if (!b.dataset.armed) {
+    b.dataset.armed = "1"; b.textContent = "Click again to remove them from every tab";
+    setTimeout(() => { delete b.dataset.armed; renderOutdatedButton(); }, 3000);
+    return;
+  }
+  delete b.dataset.armed;
+  await api("/api/signals/outdated", { method: "DELETE" });
+};
+
+$("resetFilters").onclick = () => {
+  $("srcFilter").value = $("chFilter").value = $("subsMin").value = $("subsMax").value = "";
+  $("sort").value = "score"; saveSubs(); sel = 0; render();
+};
+try { const [a, b] = JSON.parse(localStorage.getItem("subsRange") || '["",""]'); $("subsMin").value = a; $("subsMax").value = b; } catch {}
+$("grid").onclick = e => {
+  const c = e.target.closest(".card"); if (!c) return;
+  sel = +c.dataset.i;
+  const b = e.target.closest("[data-act]");
+  if (b) setStatus(c.dataset.id, b.dataset.act); else render();
+};
+$("runScout").onclick = async () => {
+  try { localStorage.setItem("scoutScope", $("scoutScope").value); } catch {}
+  await api("/api/scout", { method: "POST", body: { scope: $("scoutScope").value } }); startPoll();
+};
+try { $("scoutScope").value = localStorage.getItem("scoutScope") || "all"; } catch {}
+
+
+// --- My channel view: your own outliers + Studio stats + audience profile ---
+let M = null, meSort = "score";
+const TRAFFIC = { SUBSCRIBER: "Browse & home", YT_SEARCH: "YouTube search", RELATED_VIDEO: "Suggested videos",
+  YT_OTHER_PAGE: "Other YouTube pages", YT_CHANNEL: "Your channel page", NO_LINK_OTHER: "Direct / unknown",
+  END_SCREEN: "End screens", PLAYLIST: "Playlists", EXT_URL: "External sites", NOTIFICATION: "Notifications",
+  HASHTAGS: "Hashtags", SHORTS: "Shorts feed", YT_PLAYLIST_PAGE: "Playlist pages", ANNOTATION: "Cards" };
+const mmss = s => s == null ? "–" : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+const countryName = c => { try { return new Intl.DisplayNames(["en"], { type: "region" }).of(c); } catch { return c; } };
+
+async function loadMe() {
+  try { M = await (await fetch("/api/mychannel")).json(); } catch { M = {}; }
+  buildFit();
+  if (tab === "me") renderMeView(); else render();
+}
+
+function bars(rows, label, value, show = fmt) {
+  const max = Math.max(1, ...rows.map(value));
+  return rows.map(r => `<div class="brow"><span class="blabel" title="${esc(label(r))}">${esc(label(r))}</span>
+    <span class="btrack"><i style="width:${(value(r) / max * 100).toFixed(1)}%"></i></span>
+    <span class="bval">${show(value(r))}</span></div>`).join("");
+}
+const unavailable = part => `<p class="hint">Not available${M.errors?.[part] ? ": " + esc(M.errors[part].slice(0, 120)) : ""}</p>`;
+
+// Per-section refresh button; spins while that section is refreshing
+function rb(section, label = "") {
+  const busy = S.scout.running && S.scout.job === "my_channel" && (S.scout.sections || []).includes(section);
+  const when = M.section_updated?.[section];
+  return `<button class="rbtn ${busy ? "busy" : ""}" data-me-refresh="${section}" ${S.scout.running ? "disabled" : ""}
+    title="Refresh${label ? " " + label : " this section"}${when ? " · updated " + new Date(when).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : ""}">
+    <span>↻</span>${label ? " " + label : ""}</button>`;
+}
+
+function renderMeView() {
+  const v = $("meView");
+  if (!M) { v.innerHTML = `<p class="hint">Loading…</p>`; return; }
+  if (!M.updated) {
+    v.innerHTML = `<div class="empty"><h2>Your channel, scored</h2>
+      Your videos through the outlier formula, with Studio stats and an audience profile.<br><br>
+      <button class="btn primary" data-me-refresh>Load my channel</button>
+      <p class="hint" style="margin-top:12px">Needs YouTube connected: Sources → My channel.</p></div>`;
+    return;
+  }
+  const k = M.kpis || {};
+  const sorters = { score: x => x.score, views: x => x.views, avd: x => x.avd_pct ?? -1,
+    subs: x => x.subs_gained ?? -1, newest: x => +new Date(x.published_at) };
+  const vids = [...M.videos].sort((a, b) => sorters[meSort](b) - sorters[meSort](a));
+  const beat = M.videos.filter(x => x.score >= 2).length;
+  const hasCtr = M.videos.some(x => x.ctr != null);
+  const pct = (n, total) => total ? (n / total * 100).toFixed(1) + "%" : "–";
+  const trafficTotal = (M.traffic || []).reduce((a, r) => a + r.views, 0);
+  const ages = {}, genders = {};
+  (M.age_gender || []).forEach(r => {
+    ages[r.ageGroup.replace("age", "")] = (ages[r.ageGroup.replace("age", "")] || 0) + r.viewerPercentage;
+    genders[r.gender] = (genders[r.gender] || 0) + r.viewerPercentage;
+  });
+  const watched = new Set(S.channels.map(c => c.id));
+
+  v.innerHTML = `
+  <div class="me-head">
+    <h2>${esc(M.title)}</h2>${subsPill(M.subscribers)}
+    <span class="spacer"></span>
+    <span class="hint" style="margin:0" title="Reload the page to refresh every section">Updated ${new Date(M.updated).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</span>
+  </div>
+  <div class="me-sub">Last ${M.kpi_days} days ${rb("kpis")}</div>
+  <div class="kpis">
+    <div class="kpi"><b>${fmt(k.views)}</b><span>views · last ${M.kpi_days} days</span></div>
+    <div class="kpi"><b>${fmt((k.estimatedMinutesWatched || 0) / 60)}</b><span>watch hours</span></div>
+    <div class="kpi"><b>${mmss(k.averageViewDuration)}</b><span>avg view duration</span></div>
+    <div class="kpi"><b>+${fmt(k.subscribersGained)}</b><span>subscribers gained</span></div>
+  </div>
+
+  <div class="panelbox">
+    <h3>Your outliers ${rb("videos")} <small>${beat} of ${M.videos.length} long-form videos at 2× your same-period average or more</small>
+      <span class="spacer" style="flex:1"></span>${rb("ctr", "CTR")}
+      <select class="ctl" data-me-sort style="font-size:12px;padding:3px 8px">
+        ${[["score", "Outlier score"], ["views", "Views"], ["avd", "Retention %"], ["subs", "Subs gained"], ["newest", "Newest"]]
+          .map(([val, lab]) => `<option value="${val}" ${val === meSort ? "selected" : ""}>${lab}</option>`).join("")}
+      </select></h3>
+    <div class="vrow head"><span></span><span>Video</span><span class="num">Score</span><span class="num">Views</span>
+      <span class="num opt">Avg duration</span><span class="num opt">Subs</span><span class="num opt">CTR</span></div>
+    ${vids.map(x => `<div class="vrow">
+      <a href="${x.url}" target="_blank" rel="noopener"><img loading="lazy" src="https://i.ytimg.com/vi/${x.id}/mqdefault.jpg" alt=""></a>
+      <span><a class="vt" href="${x.url}" target="_blank" rel="noopener">${esc(x.title)}</a>
+        <span class="vsub">${x.published} · ${dur(x.seconds)}</span></span>
+      <span class="num"><span class="badge ${tier(x.score) || (x.score >= 2 ? "lift" : "")}"
+        title="${fmt(x.views)} views ÷ ${fmt(x.baseline)} your avg (same period)">${x.baseline ? x.score.toFixed(2) + "×" : "–"}</span></span>
+      <span class="num">${fmt(x.views)}</span>
+      <span class="num opt">${mmss(x.avd)}${x.avd_pct != null ? ` · ${Math.round(x.avd_pct)}%` : ""}</span>
+      <span class="num opt">${x.subs_gained != null ? "+" + fmt(x.subs_gained) : "–"}</span>
+      <span class="num opt" title="${hasCtr ? `Thumbnail CTR, ${M.ctr_from} to ${M.ctr_to}` : "YouTube is preparing the first CTR report (up to ~48 hours after setup)"}">${x.ctr != null ? x.ctr.toFixed(1) + "%" : "–"}</span>
+    </div>`).join("")}
+    ${M.shorts ? `<p class="hint" style="margin:10px 0 0">${M.shorts} Short(s) left out: scores compare long-form videos.</p>` : ""}
+  </div>
+
+  <div class="profile">
+    <div class="panelbox"><h3>What they search ${rb("search_terms")} <small>YouTube search terms · last ${M.profile_days} days</small></h3>
+      ${M.search_terms ? bars(M.search_terms.slice(0, 15), r => r.insightTrafficSourceDetail, r => r.views) : unavailable("search_terms")}</div>
+    <div class="panelbox"><h3>Where views come from ${rb("traffic")} <small>last ${M.profile_days} days</small></h3>
+      ${M.traffic ? bars(M.traffic.slice(0, 9), r => TRAFFIC[r.insightTrafficSourceType] || r.insightTrafficSourceType,
+        r => r.views, n => pct(n, trafficTotal)) : unavailable("traffic")}</div>
+    <div class="panelbox"><h3>Channels your viewers watch ${rb("suggested_from")} <small>their videos send viewers to you</small></h3>
+      ${M.suggested_from ? (M.suggested_from.length ? M.suggested_from.slice(0, 10).map(c => `<div class="wrow">
+        <span class="wname">${esc(c.title)}</span>${subsPill(c.subscribers)}
+        ${watched.has(c.channel_id) ? `<span class="pill">On watchlist</span>`
+          : `<button data-add-ch="${c.channel_id}">Add to watchlist</button>`}
+        <span class="wmeta">Sent ${fmt(c.views)} views from ${c.videos.length} video${c.videos.length > 1 ? "s" : ""}, e.g. “${esc(c.videos[0].title)}”</span>
+      </div>`).join("") : `<p class="hint">No suggested-video traffic yet.</p>`) : unavailable("suggested_from")}</div>
+    <div class="panelbox"><h3>Who's watching ${rb("audience")} <small>last ${M.profile_days} days</small></h3>
+      ${M.age_gender ? `<div class="subhead">Age</div>${bars(Object.entries(ages).map(([a, p]) => ({ a, p })), r => r.a, r => r.p, n => n.toFixed(1) + "%")}
+        <div class="subhead">Gender</div>${bars(Object.entries(genders).map(([g, p]) => ({ g, p })), r => ({ genderUserSpecified: "other", user_specified: "other" })[r.g] || r.g, r => r.p, n => n.toFixed(1) + "%")}`
+        : unavailable("audience")}
+      ${M.countries ? `<div class="subhead">Top countries</div>${bars(M.countries, r => countryName(r.country), r => r.views)}` : ""}</div>
+  </div>`;
+}
+
+$("meView").onclick = async e => {
+  const r = e.target.closest("[data-me-refresh]");
+  if (r) {
+    // one section, or everything for the first load
+    const sections = r.dataset.meRefresh ? [r.dataset.meRefresh] : null;
+    try { await api("/api/mychannel/refresh", { method: "POST", body: { sections } }); renderMeView(); startPoll(); }
+    catch (err) { alert(err.message); }
+  }
+  const add = e.target.closest("[data-add-ch]");
+  if (add) { add.disabled = true; await api("/api/channels", { method: "POST", body: { input: add.dataset.addCh, group: "Adjacent" } }); renderMeView(); }
+};
+$("meView").onchange = e => { if (e.target.matches("[data-me-sort]")) { meSort = e.target.value; renderMeView(); } };
+
+function startPoll() {
+  clearInterval(poll);
+  poll = setInterval(async () => {
+    await api("/api/state");
+    if (!S.scout.running) { clearInterval(poll); if (tab === "me") loadMe(); }
+  }, 1500);
+}
+
+const drawer = open => { $("drawer").classList.toggle("open", open); $("scrim").classList.toggle("open", open); };
+$("openWatch").onclick = () => drawer(true);
+$("closeWatch").onclick = $("scrim").onclick = () => drawer(false);
+$("addForm").onsubmit = async e => {
+  e.preventDefault(); $("addMsg").textContent = "";
+  try { await api("/api/channels", { method: "POST", body: { input: $("addInput").value, group: $("addGroup").value } }); $("addInput").value = ""; }
+  catch (err) { $("addMsg").textContent = err.message; }
+};
+$("chList").onchange = e => { const c = e.target.closest("[data-ch]"); if (e.target.matches("[data-grp]"))
+  api(`/api/channels/${c.dataset.ch}`, { method: "POST", body: { group: e.target.value } }); };
+$("chList").onclick = e => {
+  const c = e.target.closest("[data-ch]"); if (!c) return;
+  const ch = S.channels.find(x => x.id === c.dataset.ch);
+  if (e.target.matches("[data-toggle]")) api(`/api/channels/${ch.id}`, { method: "POST", body: { active: !ch.active } });
+  // Two-step remove on the button itself (confirm() dialogs are blocked in some browsers)
+  if (e.target.matches("[data-remove]")) {
+    const b = e.target;
+    if (b.dataset.armed) return api(`/api/channels/${ch.id}`, { method: "DELETE" });
+    b.dataset.armed = "1"; b.textContent = "Click again to remove"; b.classList.add("danger");
+    setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = "Remove"; b.classList.remove("danger"); } }, 3000);
+  }
+};
+
+// --- My channel: Google sign-in status ---
+async function renderMe() {
+  $("meBox").innerHTML = `<p class="hint">Checking…</p>`;
+  let st;
+  try { st = await (await fetch("/api/youtube")).json(); } catch { st = { connected: false, reason: "Server not reachable" }; }
+  $("meBox").innerHTML = st.connected
+    ? `<div class="ch"><div class="ch-top"><span class="ch-name">${esc(st.title)}</span>${subsPill(st.subscribers)}</div>
+         <div class="ch-stats"><span>Connected · read-only</span></div>
+         <div class="ch-ctl"><button data-disconnect>Disconnect</button></div></div>`
+    : `<div class="ch"><div class="ch-stats"><span>${esc(st.reason)}</span></div>
+         <div class="ch-ctl"><a class="btn primary" href="/oauth/start">Connect YouTube</a></div></div>`;
+}
+$("meBox").onclick = async e => {
+  if (!e.target.matches("[data-disconnect]")) return;
+  await fetch("/api/youtube/disconnect", { method: "POST" }); renderMe();
+};
+
+$("dtabs").onclick = e => {
+  const t = e.target.closest("[data-dtab]"); if (!t) return;
+  if (t.dataset.dtab === "me") renderMe();
+  document.querySelectorAll("#dtabs .tab").forEach(b => b.classList.toggle("on", b === t));
+  document.querySelectorAll("#drawer [data-panel]").forEach(p => p.hidden = p.dataset.panel !== t.dataset.dtab);
+};
+$("sugList").onclick = async e => {
+  const c = e.target.closest("[data-sug]"); if (!c) return;
+  if (e.target.matches("[data-add]"))
+    await api("/api/channels", { method: "POST", body: { input: c.dataset.sug, group: c.querySelector("[data-grp]").value } });
+  if (e.target.matches("[data-dismiss]")) await api(`/api/suggested/${c.dataset.sug}/dismiss`, { method: "POST" });
+};
+$("kwForm").onsubmit = async e => {
+  e.preventDefault(); $("kwMsg").textContent = "";
+  try {
+    await api("/api/keywords", { method: "POST", body: { term: $("kwTerm").value, lang: $("kwLang").value, pillar: $("kwPillar").value, kind: $("kwKind").value } });
+    $("kwTerm").value = "";
+  } catch (err) { $("kwMsg").textContent = err.message; }
+};
+$("kwList").onclick = e => {
+  const k = e.target.closest("[data-kw]"); if (!k) return;
+  const kw = S.keywords.find(x => String(x.id) === k.dataset.kw);
+  if (e.target.matches("[data-toggle]")) api(`/api/keywords/${kw.id}`, { method: "POST", body: { active: !kw.active } });
+  if (e.target.matches("[data-remove]")) api(`/api/keywords/${kw.id}`, { method: "DELETE" });
+};
+
+document.addEventListener("keydown", e => {
+  if (e.target.matches("input, select") || e.metaKey || e.ctrlKey) return;
+  if ($("drawer").classList.contains("open")) return;
+  const items = visible(), s = items[sel];
+  const k = e.key.toLowerCase();
+  if (k === "arrowright" || k === "j") { sel = Math.min(sel + 1, items.length - 1); render(); }
+  else if (k === "arrowleft" || k === "k") { sel = Math.max(sel - 1, 0); render(); }
+  else if (!s) return;
+  else if (k === "p" && tab === "New") setStatus(s.video_id, "Promoted");
+  else if (k === "l" && tab === "New") setStatus(s.video_id, "Parked");
+  else if (k === "x" && tab === "New") setStatus(s.video_id, "Killed");
+  else if (k === "u" && tab !== "New") setStatus(s.video_id, "New");
+  else if (k === "o") window.open(s.url, "_blank");
+  else return;
+  document.querySelector(".card.sel")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+});
+
+api("/api/state").then(async () => {
+  loadMe();
+  try { await api("/api/mychannel/refresh", { method: "POST", body: { auto: true } }); } catch {}
+  if (S.scout.running) startPoll();
+});
+</script>
+</body>
+</html>

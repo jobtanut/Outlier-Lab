@@ -6,7 +6,7 @@ Runs entirely on your machine. No accounts, no hosting, no third-party services:
 
 > Built for a Thai channel, but every list (channels, keywords, topic clusters) is editable for any niche.
 
-<img width="1512" height="828" alt="Screenshot 2569-10-27 at 00 23 02" src="https://github.com/user-attachments/assets/36dccc29-cb20-470b-bd91-8588be361358" />
+![Outlier Lab board](docs/screenshot.png)
 
 ---
 
@@ -98,7 +98,7 @@ The scopes requested are read-only: `youtube.readonly` and `yt-analytics.readonl
 python3 server.py
 ```
 
-Open **http://localhost:8765**. On first run the database (`scout.db`) is created and seeded with example channels and keywords. Replace them in the **Sources** drawer.
+Open **http://localhost:8765**. On first run the database (`data/scout.db`) is created and seeded with a few example channels and keywords. Replace them in the **Sources** drawer.
 
 ---
 
@@ -107,12 +107,12 @@ Open **http://localhost:8765**. On first run the database (`scout.db`) is create
 | Setting | Where | Default |
 |---|---|---|
 | Port | `SCOUT_PORT` env var | `8765` |
-| Database file | `SCOUT_DB` env var | `./scout.db` |
+| Database file | `SCOUT_DB` env var | `./data/scout.db` |
 | Candidate age window | `SCOUT_LOOKBACK_DAYS` env var | `90` days |
-| Pass bars by subscriber tier | `BAR_TIERS` in `outlier_filter.py` | 3× / 5× / 10× |
-| Baseline window and size | `WINDOW_DAYS`, `BASELINE_SIZE` in `outlier_filter.py` | 180 days, 30 videos |
-| Shorts cut-off | `SHORTS_MAX_SECONDS` in `outlier_filter.py` | 180 s |
-| Seed channels / keywords / formats | `SEED_CHANNELS`, `SEED_KEYWORDS`, `SEED_FORMATS` in `server.py` | example Thai niche |
+| Pass bars by subscriber tier | `BAR_TIERS` in `outlier_lab/outlier_filter.py` | 3× / 5× / 10× |
+| Baseline window and size | `WINDOW_DAYS`, `BASELINE_SIZE` in `outlier_lab/outlier_filter.py` | 180 days, 30 videos |
+| Shorts cut-off | `SHORTS_MAX_SECONDS` in `outlier_lab/outlier_filter.py` | 180 s |
+| Seed channels / keywords / formats | `SEED_CHANNELS`, `SEED_KEYWORDS`, `SEED_FORMATS` in `server.py` | productivity examples |
 | Audience-fit topic clusters | `FIT_CLUSTERS` in `static/index.html` | money, discipline, focus, learning |
 
 If you change the port, update the OAuth redirect URI to match.
@@ -139,18 +139,21 @@ The Analytics and Reporting APIs have their own separate quotas. Network blips a
 ## Project structure
 
 ```
-server.py          Local HTTP server, SQLite storage, background jobs, API routes
-outlier_filter.py  The formula: uploads → same-period average → score → pass bars (also a CLI)
-discover.py        Topic and format search: cheap pre-filter, then the real gate
-my_channel.py      Your own channel: videos, Analytics, Reporting (CTR), audience profile
-youtube_auth.py    Read-only Google OAuth (sign-in, token refresh)
-static/index.html  The entire UI (vanilla JS + CSS, no build step)
+server.py                    Local HTTP server, SQLite storage, background jobs, API routes (run this)
+outlier_lab/
+  outlier_filter.py          The formula: uploads → same-period average → score → pass bars (also a CLI)
+  discover.py                Topic and format search: cheap pre-filter, then the real gate
+  my_channel.py              Your own channel: videos, Analytics, Reporting (CTR), audience profile
+  youtube_auth.py            Read-only Google OAuth (sign-in, token refresh)
+static/index.html            The entire UI (vanilla JS + CSS, no build step)
+data/                        Your local database lives here (gitignored)
+docs/                        README images
 ```
 
 Command-line scoring, no server needed:
 
 ```bash
-python3 outlier_filter.py --lookback 90 UCxxxxxxxxxxxxxxxxxxxxxx UCyyyyyyyyyyyyyyyyyyyyyy
+python3 -m outlier_lab.outlier_filter --lookback 90 UCxxxxxxxxxxxxxxxxxxxxxx UCyyyyyyyyyyyyyyyyyyyyyy
 ```
 
 ---
@@ -159,17 +162,7 @@ python3 outlier_filter.py --lookback 90 UCxxxxxxxxxxxxxxxxxxxxxx UCyyyyyyyyyyyyy
 
 - Everything runs on `127.0.0.1`. Your channel data never leaves your machine except to talk to Google's APIs.
 - Credentials live in `~/.config/content-scout/`, **outside the repository**.
-- `scout.db` holds your triage history and private channel analytics. **Don't commit it.** Suggested `.gitignore`:
-
-```gitignore
-scout.db
-__pycache__/
-*.pyc
-.env
-client_secret*.json
-token.json
-.DS_Store
-```
+- `data/scout.db` holds your triage history and private channel analytics. It's excluded by the repo's `.gitignore`, along with any credential files, so it can't be committed by accident.
 
 ---
 
@@ -181,3 +174,7 @@ token.json
 - **No trending:** YouTube's trending lists are almost all videos under 7 days old, so they're not used as a source.
 
 ---
+
+## License
+
+[MIT](LICENSE)
