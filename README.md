@@ -4,7 +4,7 @@
 
 Runs entirely on your machine. No accounts, no hosting, no third-party services: just the YouTube APIs and a small Python server.
 
-> Built for a Thai self-improvement / money channel, but every list (channels, keywords, topic clusters) is editable for any niche.
+> Built for a Thai channel, but every list (channels, keywords, topic clusters) is editable for any niche.
 
 <img width="1512" height="828" alt="Screenshot 2569-10-27 at 00 23 02" src="https://github.com/user-attachments/assets/36dccc29-cb20-470b-bd91-8588be361358" />
 
