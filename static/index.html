@@ -154,7 +154,6 @@
   .range { display: flex; align-items: center; gap: 6px; color: var(--muted); }
   .range input.ctl { width: 110px; padding: 4px 9px; font-size: 12.5px; }
   .range input.bad { border-color: var(--bad); }
-  .range .unit { font-size: 12px; }
   /* dual-handle slider: two range inputs stacked on one track */
   .dual { position: relative; height: 22px; flex: 1 1 170px; min-width: 110px; max-width: 220px; }
   .dual-track { position: absolute; left: 0; right: 0; top: 50%; height: 4px; margin-top: -2px;
@@ -346,14 +345,13 @@
       <span class="flabel">Length</span>
       <div class="chips" id="lenChips"></div>
       <div class="range">
-        <input class="ctl" id="lenMin" placeholder="Min e.g. 8" inputmode="decimal" aria-label="Minimum video length in minutes">
+        <input class="ctl" id="lenMin" placeholder="Min e.g. 8 min" inputmode="decimal" aria-label="Minimum video length in minutes">
         <div class="dual" id="lenSlider">
           <div class="dual-track"><i></i></div>
           <input type="range" min="0" max="1000" value="0" data-end="lo" aria-label="Minimum video length in minutes slider">
           <input type="range" min="0" max="1000" value="1000" data-end="hi" aria-label="Maximum video length in minutes slider">
         </div>
-        <input class="ctl" id="lenMax" placeholder="Max e.g. 30" inputmode="decimal" aria-label="Maximum video length in minutes">
-        <span class="unit">min</span>
+        <input class="ctl" id="lenMax" placeholder="Max e.g. 30 min" inputmode="decimal" aria-label="Maximum video length in minutes">
       </div>
     </div>
     <div class="prow foot">
