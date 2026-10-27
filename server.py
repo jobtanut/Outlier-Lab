@@ -230,10 +230,18 @@ def search_keywords(key, progress, kind):
     return len(keywords), added
 
 
+class JobCancelled(BaseException):
+    """Raised at the next progress step after Stop is pressed. A BaseException so the
+    per-section `except Exception` handlers (e.g. in my_channel.build) don't swallow it."""
+
+
 def progress_reporter(start=0.0, span=1.0):
     """Progress callback for one phase of a job: a phase's own 0..1 is mapped onto the
-    job's overall bar between start and start + span."""
+    job's overall bar between start and start + span. Every job reports progress before
+    each channel/keyword/section, which is also where a Stop takes effect."""
     def report(msg, frac=None):
+        if scout_state.get("cancel"):
+            raise JobCancelled()
         update = {"message": msg}
         if frac is not None:
             update["progress"] = round(min(1.0, start + span * frac), 4)
@@ -276,6 +284,8 @@ def scout_thread(scope):
             parts.append(f"{n_fm} formats searched, {from_format} new")
         scout_state.update(progress=1.0)
         scout_state.update(error=None, message=" · ".join(parts))
+    except JobCancelled:
+        scout_state.update(error=None, message="Stopped. Outliers found before the stop are kept")
     except Exception as e:
         scout_state.update(error=api_error(e), message="Scout failed")
     finally:
@@ -383,6 +393,8 @@ def job_thread(fn, *args):
         msg = fn(*args, progress=progress_reporter())
         scout_state.update(progress=1.0)
         scout_state.update(error=None, message=msg)
+    except JobCancelled:
+        scout_state.update(error=None, message="Stopped. Anything saved before the stop is kept")
     except Exception as e:
         scout_state.update(error=api_error(e), message="Job failed")
     finally:
@@ -533,7 +545,7 @@ class Handler(BaseHTTPRequestHandler):
                 if scope not in SCOUT_SCOPES:
                     return self.send_json({"error": "bad scope"}, 400)
                 if not scout_state["running"]:
-                    scout_state.update(running=True, error=None, progress=0, message="Starting…")
+                    scout_state.update(running=True, error=None, progress=0, cancel=False, message="Starting…")
                     threading.Thread(target=scout_thread, args=(scope,), daemon=True).start()
                 return self.send_json(state())
 
@@ -543,7 +555,7 @@ class Handler(BaseHTTPRequestHandler):
                 if list_id:
                     if scout_state["running"]:
                         return self.send_json({"error": "Wait for the current run to finish"}, 400)
-                    scout_state.update(running=True, error=None, progress=0, message="Reading playlist…")
+                    scout_state.update(running=True, error=None, progress=0, cancel=False, message="Reading playlist…")
                     threading.Thread(target=job_thread, args=(lambda progress: add_playlist(
                         list_id, of.load_key(), progress),), daemon=True).start()
                     return self.send_json({**state(), "message": "Importing playlist… progress is in the status line", "job": True})
@@ -560,16 +572,21 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(state())  # page-load refresh: skip quietly if busy or not connected
                 if scout_state["running"]:
                     return self.send_json({"error": "Wait for the current run to finish"}, 400)
-                scout_state.update(running=True, error=None, progress=0, message="My channel: starting…", job="my_channel",
+                scout_state.update(running=True, error=None, progress=0, cancel=False, message="My channel: starting…", job="my_channel",
                                    sections=list(sections))
                 threading.Thread(target=job_thread, args=(
                     lambda progress: refresh_my_channel(progress, sections),), daemon=True).start()
                 return self.send_json(state())
 
+            if parts == ["api", "stop"]:
+                if scout_state["running"]:
+                    scout_state.update(cancel=True, message="Stopping after the current step…")
+                return self.send_json(state())
+
             if parts == ["api", "rescore"]:
                 if scout_state["running"]:
                     return self.send_json({"error": "Wait for the current run to finish"}, 400)
-                scout_state.update(running=True, error=None, progress=0, message="Rescoring…")
+                scout_state.update(running=True, error=None, progress=0, cancel=False, message="Rescoring…")
                 threading.Thread(target=job_thread, args=(rescore_all,), daemon=True).start()
                 return self.send_json(state())
 
