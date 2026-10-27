@@ -180,9 +180,16 @@
   .run .scope:disabled { opacity: .6; }
   .btn.primary:disabled { opacity: .6; cursor: wait; }
   .status-line { max-width: 1400px; margin: 0 auto; padding: 0 20px 10px; color: var(--muted); font-size: 12px; display: flex; gap: 14px; flex-wrap: wrap; }
-  .jobbar { position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; background: var(--surface-2); overflow: hidden; }
-  .jobbar i { display: block; height: 100%; width: 0; background: var(--accent-ink); transition: width .6s ease; }
-  .jobbar.indeterminate i { width: 30%; animation: slide 1.2s ease-in-out infinite; }
+  .jobrow { max-width: 1400px; margin: 0 auto; padding: 0 20px 10px; display: flex; align-items: center; gap: 10px; }
+  .jobtrack { flex: 1; height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+  .jobtrack i { display: block; height: 100%; width: 0; background: var(--accent-ink); border-radius: 999px; transition: width .6s ease; }
+  .jobtrack.indeterminate i { width: 30%; animation: slide 1.2s ease-in-out infinite; }
+  .jobpct { font-size: 12px; font-weight: 600; color: var(--muted); min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+  .jobstop { border: 1px solid var(--bad); background: transparent; color: var(--bad); border-radius: 6px;
+    font-size: 12px; font-weight: 600; padding: 2px 10px; cursor: pointer; }
+  .jobstop:hover:not(:disabled) { background: var(--bad-soft); }
+  .jobstop:disabled { opacity: .6; cursor: default; }
+  .me-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); cursor: pointer; }
   @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
   .status-line .err { color: var(--bad); }
 
@@ -363,7 +370,11 @@
     </div>
   </div>
   <div class="status-line" id="statusLine"></div>
-  <div class="jobbar" id="jobBar" hidden><i></i></div>
+  <div class="jobrow" id="jobRow" hidden>
+    <div class="jobtrack"><i></i></div>
+    <span class="jobpct" id="jobPct"></span>
+    <button class="jobstop" id="stopJob" title="Stop after the current step, so no more API units are used">■ Stop</button>
+  </div>
 </header>
 
 <main>
@@ -629,15 +640,19 @@ function render() {
 
   const sc = S.scout || {};
   // Progress bar along the bottom of the header while any job runs (sliding stripe until a % is known)
-  $("jobBar").hidden = !sc.running;
-  $("jobBar").classList.toggle("indeterminate", sc.running && sc.progress == null);
-  $("jobBar").querySelector("i").style.width = sc.running && sc.progress != null ? `${Math.max(2, sc.progress * 100)}%` : "";
+  $("jobRow").hidden = !sc.running;
+  const track = $("jobRow").querySelector(".jobtrack");
+  track.classList.toggle("indeterminate", sc.running && sc.progress == null);
+  track.querySelector("i").style.width = sc.running && sc.progress != null ? `${Math.max(2, sc.progress * 100)}%` : "";
+  $("jobPct").textContent = sc.running && sc.progress != null ? `${Math.round(sc.progress * 100)}%` : "";
+  $("stopJob").disabled = !!sc.cancel;
+  $("stopJob").textContent = sc.cancel ? "Stopping…" : "■ Stop";
   $("runScout").disabled = $("scoutScope").disabled = !!sc.running;
   $("runScout").textContent = sc.running ? "Scouting…" : "Run scout";
   const active = S.channels.filter(c => c.active).length;
   const kws = S.keywords.filter(k => k.active).length;
   $("statusLine").innerHTML = [
-    sc.running ? esc(sc.message) + (sc.progress != null ? ` · <b>${Math.round(sc.progress * 100)}%</b>` : "") : sc.last_run
+    sc.running ? esc(sc.message) : sc.last_run
       ? `Last run ${new Date(sc.last_run).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} · ${esc(sc.message)} · ~${sc.units} units`
       : "Not run yet",
     sc.error ? `<span class="err">${esc(sc.error)}</span>` : ""
@@ -949,7 +964,9 @@ function renderMeView() {
   <div class="me-head">
     <h2>${esc(M.title)}</h2>${subsPill(M.subscribers)}
     <span class="spacer"></span>
-    <span class="hint" style="margin:0" title="Reload the page to refresh every section">Updated ${new Date(M.updated).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</span>
+    <span class="hint" style="margin:0">Updated ${new Date(M.updated).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</span>
+    <label class="me-toggle" title="When on, reloading the page refreshes every section (~7 API units)">
+      <input type="checkbox" data-me-auto ${autoRefreshMe() ? "checked" : ""}> Refresh on page load</label>
   </div>
   <div class="me-sub">Last ${M.kpi_days} days ${rb("kpis")}</div>
   <div class="kpis">
@@ -1015,7 +1032,13 @@ $("meView").onclick = async e => {
   const add = e.target.closest("[data-add-ch]");
   if (add) { add.disabled = true; await api("/api/channels", { method: "POST", body: { input: add.dataset.addCh, group: "Adjacent" } }); renderMeView(); }
 };
-$("meView").onchange = e => { if (e.target.matches("[data-me-sort]")) { meSort = e.target.value; renderMeView(); } };
+$("meView").onchange = e => {
+  if (e.target.matches("[data-me-sort]")) { meSort = e.target.value; renderMeView(); }
+  if (e.target.matches("[data-me-auto]")) try { localStorage.setItem("meAutoRefresh", e.target.checked ? "1" : "0"); } catch {}
+};
+// Page-load refresh of My channel: on unless switched off (remembered in this browser)
+function autoRefreshMe() { try { return localStorage.getItem("meAutoRefresh") !== "0"; } catch { return true; } }
+$("stopJob").onclick = () => api("/api/stop", { method: "POST" });
 
 function startPoll() {
   clearInterval(poll);
@@ -1110,7 +1133,7 @@ document.addEventListener("keydown", e => {
 
 api("/api/state").then(async () => {
   loadMe();
-  try { await api("/api/mychannel/refresh", { method: "POST", body: { auto: true } }); } catch {}
+  if (autoRefreshMe()) try { await api("/api/mychannel/refresh", { method: "POST", body: { auto: true } }); } catch {}
   if (S.scout.running) startPoll();
 });
 </script>
