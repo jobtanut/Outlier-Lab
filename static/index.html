@@ -100,7 +100,8 @@
   .bval { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
   .wrow { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--border); font-size: 13px; flex-wrap: wrap; }
   .wrow:first-of-type { border-top: 0; }
-  .wrow .wname { font-weight: 600; }
+  .wrow .wname { font-weight: 600; color: inherit; text-decoration: none; }
+  .wrow .wname:hover { text-decoration: underline; color: var(--accent-ink); }
   .wrow .wmeta { color: var(--muted); font-size: 12px; flex-basis: 100%; }
   .wrow button { margin-left: auto; font-size: 12px; padding: 3px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
   .subhead { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 12px 0 4px; }
@@ -982,7 +983,8 @@ function renderMeView() {
         r => r.views, n => pct(n, trafficTotal)) : unavailable("traffic")}</div>
     <div class="panelbox"><h3>Channels your viewers watch ${rb("suggested_from")} <small>their videos send viewers to you</small></h3>
       ${M.suggested_from ? (M.suggested_from.length ? M.suggested_from.slice(0, 10).map(c => `<div class="wrow">
-        <span class="wname">${esc(c.title)}</span>${subsPill(c.subscribers)}
+        <a class="wname" href="https://www.youtube.com/channel/${c.channel_id}" target="_blank" rel="noopener"
+          title="Open ${esc(c.title)} on YouTube">${esc(c.title)} ↗</a>${subsPill(c.subscribers)}
         ${watched.has(c.channel_id) ? `<span class="pill">On watchlist</span>`
           : `<button data-add-ch="${c.channel_id}">Add to watchlist</button>`}
         <span class="wmeta">Sent ${fmt(c.views)} views from ${c.videos.length} video${c.videos.length > 1 ? "s" : ""}, e.g. “${esc(c.videos[0].title)}”</span>
