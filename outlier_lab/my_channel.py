@@ -102,7 +102,7 @@ def suggested_from(start, end, key):
 SECTIONS = ("kpis", "videos", "ctr", "search_terms", "traffic", "suggested_from", "audience")
 
 
-def build(key, progress=lambda msg: None, sections=SECTIONS, previous=None):
+def build(key, progress=lambda msg, frac=None: None, sections=SECTIONS, previous=None):
     """Refresh `sections`, keeping everything else from `previous` (the last saved copy)."""
     end_d = date.today() - timedelta(days=1)  # Analytics lags about a day
     end = end_d.isoformat()
@@ -146,8 +146,9 @@ def build(key, progress=lambda msg: None, sections=SECTIONS, previous=None):
         "audience": audience,
     }
     # One section failing (e.g. too little data) shouldn't sink the rest
-    for name in [n for n in SECTIONS if n in sections]:
-        progress(f"My channel: {name.replace('_', ' ')}")
+    todo = [n for n in SECTIONS if n in sections]
+    for i, name in enumerate(todo):
+        progress(f"My channel: {name.replace('_', ' ')}", i / len(todo))
         try:
             fetchers[name]()
             errors.pop(name, None)

@@ -124,7 +124,7 @@ SIGNAL_COLUMNS = {
     "published_at": "TEXT",  # exact publish time, for views per hour
 }
 
-scout_state = {"running": False, "last_run": None, "message": "", "error": None, "units": 0}
+scout_state = {"running": False, "last_run": None, "message": "", "error": None, "units": 0, "progress": None}
 write_lock = threading.Lock()
 
 
@@ -190,7 +190,7 @@ def sweep_watchlist(key, progress):
         channels = conn.execute("SELECT id, title FROM channels WHERE active = 1").fetchall()
     added = 0
     for i, ch in enumerate(channels, 1):
-        progress(f"Scanning {ch['title'] or ch['id']} ({i}/{len(channels)})")
+        progress(f"Scanning {ch['title'] or ch['id']} ({i}/{len(channels)})", (i - 1) / len(channels))
         r = of.score_channel(ch["id"], key, LOOKBACK_DAYS)
         stamp = now_iso()
         with write_lock, db() as conn:
@@ -230,22 +230,51 @@ def search_keywords(key, progress, kind):
     return len(keywords), added
 
 
+def progress_reporter(start=0.0, span=1.0):
+    """Progress callback for one phase of a job: a phase's own 0..1 is mapped onto the
+    job's overall bar between start and start + span."""
+    def report(msg, frac=None):
+        update = {"message": msg}
+        if frac is not None:
+            update["progress"] = round(min(1.0, start + span * frac), 4)
+        scout_state.update(update)
+    return report
+
+
+# Rough relative cost of one unit of work in each scout phase, for the progress bar:
+# a keyword (a search plus baseline checks on what it finds) takes far longer than a channel
+PHASE_WEIGHT = {"channels": 1, "topic": 4, "format": 4}
+
+
 def scout_thread(scope):
     """scope: 'all', 'channels' (watchlist sweep), 'keywords' (topic search) or 'formats'."""
     of.QUOTA["units"] = 0
-    progress = lambda msg: scout_state.update(message=msg)
+    with db() as conn:
+        counts = {"channels": conn.execute("SELECT COUNT(*) FROM channels WHERE active = 1").fetchone()[0]}
+        for kind in KINDS:
+            counts[kind] = conn.execute("SELECT COUNT(*) FROM keywords WHERE active = 1 AND kind = ?",
+                                        (kind,)).fetchone()[0]
+    phases = [p for p, on in (("channels", scope in ("all", "channels")), ("topic", scope in ("all", "keywords")),
+                              ("format", scope in ("all", "formats"))) if on]
+    weights = {p: counts[p] * PHASE_WEIGHT[p] for p in phases}
+    total = sum(weights.values()) or 1
+    spans, start = {}, 0.0
+    for p in phases:
+        spans[p] = progress_reporter(start, weights[p] / total)
+        start += weights[p] / total
     try:
         key = of.load_key()
         parts = []
-        if scope in ("all", "channels"):
-            n_ch, from_watch = sweep_watchlist(key, progress)
+        if "channels" in spans:
+            n_ch, from_watch = sweep_watchlist(key, spans["channels"])
             parts.append(f"{n_ch} channels scanned, {from_watch} new")
-        if scope in ("all", "keywords"):
-            n_kw, from_search = search_keywords(key, progress, "topic")
+        if "topic" in spans:
+            n_kw, from_search = search_keywords(key, spans["topic"], "topic")
             parts.append(f"{n_kw} topics searched, {from_search} new")
-        if scope in ("all", "formats"):
-            n_fm, from_format = search_keywords(key, progress, "format")
+        if "format" in spans:
+            n_fm, from_format = search_keywords(key, spans["format"], "format")
             parts.append(f"{n_fm} formats searched, {from_format} new")
+        scout_state.update(progress=1.0)
         scout_state.update(error=None, message=" · ".join(parts))
     except Exception as e:
         scout_state.update(error=api_error(e), message="Scout failed")
@@ -266,7 +295,7 @@ def video_id_from(text):
     return m.group(1)
 
 
-def add_playlist(list_id, key, progress=lambda msg: None):
+def add_playlist(list_id, key, progress=lambda msg, frac=None: None):
     """Import every long-form video in a public or unlisted playlist as Manual cards.
     Costs ~1 unit per 50 videos plus one baseline check per distinct channel."""
     found = of.get("playlists", key, part="snippet", id=list_id).get("items", [])
@@ -292,7 +321,7 @@ def add_playlist(list_id, key, progress=lambda msg: None):
         by_channel.setdefault(v["channel_id"], []).append(v)
     added = below = 0
     for i, (ch, group) in enumerate(by_channel.items(), 1):
-        progress(f"Importing “{name}”: channel baseline {i}/{len(by_channel)}")
+        progress(f"Importing “{name}”: channel baseline {i}/{len(by_channel)}", (i - 1) / len(by_channel))
         r = of.score_channel(ch, key, LOOKBACK_DAYS, extra=group)
         for v in r["extra"]:
             if not v["baseline"]:
@@ -317,7 +346,7 @@ def rescore_all(progress):
     for v in discover.video_details(ids, key):
         by_channel.setdefault(v["channel_id"], []).append(v)
     for i, (ch, group) in enumerate(by_channel.items(), 1):
-        progress(f"Rescoring: channel {i}/{len(by_channel)}")
+        progress(f"Rescoring: channel {i}/{len(by_channel)}", (i - 1) / len(by_channel))
         r = of.score_channel(ch, key, LOOKBACK_DAYS, extra=group)
         with write_lock, db() as conn:
             for v in r["extra"]:
@@ -351,7 +380,8 @@ def job_thread(fn, *args):
     reporting progress through scout_state."""
     of.QUOTA["units"] = 0
     try:
-        msg = fn(*args, progress=lambda m: scout_state.update(message=m))
+        msg = fn(*args, progress=progress_reporter())
+        scout_state.update(progress=1.0)
         scout_state.update(error=None, message=msg)
     except Exception as e:
         scout_state.update(error=api_error(e), message="Job failed")
@@ -503,7 +533,7 @@ class Handler(BaseHTTPRequestHandler):
                 if scope not in SCOUT_SCOPES:
                     return self.send_json({"error": "bad scope"}, 400)
                 if not scout_state["running"]:
-                    scout_state.update(running=True, error=None, message="Starting…")
+                    scout_state.update(running=True, error=None, progress=0, message="Starting…")
                     threading.Thread(target=scout_thread, args=(scope,), daemon=True).start()
                 return self.send_json(state())
 
@@ -513,7 +543,7 @@ class Handler(BaseHTTPRequestHandler):
                 if list_id:
                     if scout_state["running"]:
                         return self.send_json({"error": "Wait for the current run to finish"}, 400)
-                    scout_state.update(running=True, error=None, message="Reading playlist…")
+                    scout_state.update(running=True, error=None, progress=0, message="Reading playlist…")
                     threading.Thread(target=job_thread, args=(lambda progress: add_playlist(
                         list_id, of.load_key(), progress),), daemon=True).start()
                     return self.send_json({**state(), "message": "Importing playlist… progress is in the status line", "job": True})
@@ -530,7 +560,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(state())  # page-load refresh: skip quietly if busy or not connected
                 if scout_state["running"]:
                     return self.send_json({"error": "Wait for the current run to finish"}, 400)
-                scout_state.update(running=True, error=None, message="My channel: starting…", job="my_channel",
+                scout_state.update(running=True, error=None, progress=0, message="My channel: starting…", job="my_channel",
                                    sections=list(sections))
                 threading.Thread(target=job_thread, args=(
                     lambda progress: refresh_my_channel(progress, sections),), daemon=True).start()
@@ -539,7 +569,7 @@ class Handler(BaseHTTPRequestHandler):
             if parts == ["api", "rescore"]:
                 if scout_state["running"]:
                     return self.send_json({"error": "Wait for the current run to finish"}, 400)
-                scout_state.update(running=True, error=None, message="Rescoring…")
+                scout_state.update(running=True, error=None, progress=0, message="Rescoring…")
                 threading.Thread(target=job_thread, args=(rescore_all,), daemon=True).start()
                 return self.send_json(state())
 

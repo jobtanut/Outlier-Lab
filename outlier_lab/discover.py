@@ -50,11 +50,11 @@ def channel_info(ids, key):
     return out
 
 
-def find_candidates(keywords, key, lookback, skip_channels, progress=lambda msg: None):
+def find_candidates(keywords, key, lookback, skip_channels, progress=lambda msg, frac=None: None):
     """Stage 1. keywords: [(term, lang)]. Returns {video_id: video dict + keyword/channel info}."""
     found = {}
     for i, (term, lang) in enumerate(keywords, 1):
-        progress(f"Searching “{term}” ({i}/{len(keywords)})")
+        progress(f"Searching “{term}” ({i}/{len(keywords)})", 0.5 * (i - 1) / len(keywords))
         for vid in search(term, lang, key, lookback):
             found.setdefault(vid, term)
     videos = [v for v in video_details(found, key)
@@ -72,7 +72,7 @@ def find_candidates(keywords, key, lookback, skip_channels, progress=lambda msg:
     return candidates
 
 
-def gate_candidates(candidates, key, lookback, progress=lambda msg: None):
+def gate_candidates(candidates, key, lookback, progress=lambda msg, frac=None: None):
     """Stage 2. Yields (channel_result, passed_video_with_keyword) using each channel's real baseline."""
     by_channel = {}
     for c in candidates.values():
@@ -80,7 +80,8 @@ def gate_candidates(candidates, key, lookback, progress=lambda msg: None):
     # Strongest pre-filter ratio first, so the cap drops the weakest channels
     ranked = sorted(by_channel, key=lambda ch: max(c["views"] / c["subscribers"] for c in by_channel[ch]), reverse=True)
     for i, ch in enumerate(ranked[:MAX_CANDIDATE_CHANNELS], 1):
-        progress(f"Checking baseline for {by_channel[ch][0]['channel_title']} ({i}/{min(len(ranked), MAX_CANDIDATE_CHANNELS)})")
+        n = min(len(ranked), MAX_CANDIDATE_CHANNELS)
+        progress(f"Checking baseline for {by_channel[ch][0]['channel_title']} ({i}/{n})", 0.5 + 0.5 * (i - 1) / n)
         r = of.score_channel(ch, key, lookback)
         passed = {v["id"]: v for v in r["passed"]}
         for c in by_channel[ch]:

@@ -181,6 +181,10 @@
   .run .scope:disabled { opacity: .6; }
   .btn.primary:disabled { opacity: .6; cursor: wait; }
   .status-line { max-width: 1400px; margin: 0 auto; padding: 0 20px 10px; color: var(--muted); font-size: 12px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .jobbar { position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; background: var(--surface-2); overflow: hidden; }
+  .jobbar i { display: block; height: 100%; width: 0; background: var(--accent-ink); transition: width .6s ease; }
+  .jobbar.indeterminate i { width: 30%; animation: slide 1.2s ease-in-out infinite; }
+  @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
   .status-line .err { color: var(--bad); }
 
   main { max-width: 1400px; margin: 0 auto; padding: 20px; }
@@ -361,6 +365,7 @@
     </div>
   </div>
   <div class="status-line" id="statusLine"></div>
+  <div class="jobbar" id="jobBar" hidden><i></i></div>
 </header>
 
 <main>
@@ -625,12 +630,16 @@ function render() {
     .map(([id, t]) => `<option value="${id}" ${id === cur ? "selected" : ""}>${esc(t)}</option>`).join("");
 
   const sc = S.scout || {};
+  // Progress bar along the bottom of the header while any job runs (sliding stripe until a % is known)
+  $("jobBar").hidden = !sc.running;
+  $("jobBar").classList.toggle("indeterminate", sc.running && sc.progress == null);
+  $("jobBar").querySelector("i").style.width = sc.running && sc.progress != null ? `${Math.max(2, sc.progress * 100)}%` : "";
   $("runScout").disabled = $("scoutScope").disabled = !!sc.running;
   $("runScout").textContent = sc.running ? "Scouting…" : "Run scout";
   const active = S.channels.filter(c => c.active).length;
   const kws = S.keywords.filter(k => k.active).length;
   $("statusLine").innerHTML = [
-    sc.running ? esc(sc.message) : sc.last_run
+    sc.running ? esc(sc.message) + (sc.progress != null ? ` · <b>${Math.round(sc.progress * 100)}%</b>` : "") : sc.last_run
       ? `Last run ${new Date(sc.last_run).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} · ${esc(sc.message)} · ~${sc.units} units`
       : "Not run yet",
     sc.error ? `<span class="err">${esc(sc.error)}</span>` : ""
