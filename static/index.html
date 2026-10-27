@@ -151,10 +151,25 @@
   .chip:hover { border-color: var(--muted); }
   .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
   .range { display: flex; align-items: center; gap: 6px; color: var(--muted); }
-  .range input { width: 110px; padding: 4px 9px; font-size: 12.5px; }
+  .range input.ctl { width: 110px; padding: 4px 9px; font-size: 12.5px; }
   .range input.bad { border-color: var(--bad); }
+  .range .unit { font-size: 12px; }
+  /* dual-handle slider: two range inputs stacked on one track */
+  .dual { position: relative; height: 22px; flex: 1 1 170px; min-width: 110px; max-width: 220px; }
+  .dual-track { position: absolute; left: 0; right: 0; top: 50%; height: 4px; margin-top: -2px;
+    background: var(--surface-2); border-radius: 999px; }
+  .dual-track i { position: absolute; top: 0; bottom: 0; background: var(--accent); border-radius: 999px; }
+  .range .dual input { position: absolute; inset: 0; width: 100%; margin: 0; padding: 0; border: 0; background: none; pointer-events: none;
+    -webkit-appearance: none; appearance: none; }
+  .dual input::-webkit-slider-runnable-track { background: none; height: 22px; }
+  .dual input::-moz-range-track { background: none; }
+  .dual input::-webkit-slider-thumb { -webkit-appearance: none; pointer-events: auto; width: 16px; height: 16px; margin-top: 3px;
+    border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); cursor: grab; }
+  .dual input::-moz-range-thumb { pointer-events: auto; width: 13px; height: 13px; border-radius: 50%;
+    background: var(--surface); border: 2px solid var(--accent); cursor: grab; }
+  .dual input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--accent-soft); }
   @media (max-width: 640px) {
-    .panel { padding: 12px 16px; } .range input { width: 96px; }
+    .panel { padding: 12px 16px; } .range { width: 100%; } .range input.ctl { width: 76px; }
   }
   .run { display: flex; margin-left: auto; }
   .run .btn { border-radius: 8px 0 0 8px; padding: 6px 12px; white-space: nowrap; }
@@ -314,8 +329,26 @@
       <div class="chips" id="subsChips"></div>
       <div class="range">
         <input class="ctl" id="subsMin" placeholder="Min e.g. 50K" inputmode="decimal" aria-label="Minimum subscribers">
-        <span>–</span>
+        <div class="dual" id="subsSlider">
+          <div class="dual-track"><i></i></div>
+          <input type="range" min="0" max="1000" value="0" data-end="lo" aria-label="Minimum subscribers slider">
+          <input type="range" min="0" max="1000" value="1000" data-end="hi" aria-label="Maximum subscribers slider">
+        </div>
         <input class="ctl" id="subsMax" placeholder="Max e.g. 1M" inputmode="decimal" aria-label="Maximum subscribers">
+      </div>
+    </div>
+    <div class="prow">
+      <span class="flabel">Length</span>
+      <div class="chips" id="lenChips"></div>
+      <div class="range">
+        <input class="ctl" id="lenMin" placeholder="Min e.g. 8" inputmode="decimal" aria-label="Minimum video length in minutes">
+        <div class="dual" id="lenSlider">
+          <div class="dual-track"><i></i></div>
+          <input type="range" min="0" max="1000" value="0" data-end="lo" aria-label="Minimum video length in minutes slider">
+          <input type="range" min="0" max="1000" value="1000" data-end="hi" aria-label="Maximum video length in minutes slider">
+        </div>
+        <input class="ctl" id="lenMax" placeholder="Max e.g. 30" inputmode="decimal" aria-label="Maximum video length in minutes">
+        <span class="unit">min</span>
       </div>
     </div>
     <div class="prow foot">
@@ -409,12 +442,10 @@ async function api(path, opts = {}) {
   S = data; render(); return data;
 }
 
-// --- subscriber range filter ---
-// Quick picks fill the min/max boxes; max is exclusive so ranges don't overlap
-const SUBS_PRESETS = [
-  ["All", "", ""], ["Under 10K", "", "10K"], ["10K–100K", "10K", "100K"],
-  ["100K–300K", "100K", "300K"], ["300K+", "300K", ""],
-];
+// --- range filters (subscribers, video length): quick picks + slider + text boxes ---
+// All three stay in sync. Max is exclusive so quick-pick ranges don't overlap.
+// A slider at its far left means "no minimum", at its far right "no maximum".
+const SLIDER_STEPS = 1000;
 // "50k", "1.2M", "250000" → number; "" → null; anything else → NaN
 function parseSubs(text) {
   const m = String(text).trim().replace(/,/g, "").match(/^(\d+(?:\.\d+)?)\s*([km]?)$/i);
@@ -422,23 +453,82 @@ function parseSubs(text) {
   if (!m) return NaN;
   return +m[1] * ({ k: 1e3, m: 1e6 }[m[2].toLowerCase()] || 1);
 }
-function subsRange() {
-  const lo = parseSubs($("subsMin").value), hi = parseSubs($("subsMax").value);
-  $("subsMin").classList.toggle("bad", Number.isNaN(lo));
-  $("subsMax").classList.toggle("bad", Number.isNaN(hi));
+// Minutes: "15", "15m", "90 min", "1h", "1h30", "1.5h", "1:30" → number; "" → null; else NaN
+function parseMinutes(text) {
+  const t = String(text).trim().toLowerCase().replace(/\s+/g, "");
+  if (!t) return null;
+  let m = t.match(/^(\d+):(\d{1,2})$/);
+  if (m) return +m[1] * 60 + +m[2];
+  m = t.match(/^(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)(?:m|min|mins)?)?$/);
+  return m && (m[1] || m[2]) ? (+m[1] || 0) * 60 + (+m[2] || 0) : NaN;
+}
+// Two significant figures, so slider values read like 12K or 1.2M rather than 12,347
+const nice = n => { const p = 10 ** Math.max(0, Math.floor(Math.log10(n)) - 1); return Math.round(n / p) * p; };
+
+const RANGES = {
+  subs: {
+    parse: parseSubs, show: n => fmt(n), value: s => s.subscribers,
+    scale: "log", from: 1e3, to: 1e7,            // slider spans 1K … 10M subscribers
+    presets: [["All", "", ""], ["Under 10K", "", "10K"], ["10K–100K", "10K", "100K"],
+      ["100K–300K", "100K", "300K"], ["300K+", "300K", ""]],
+  },
+  len: {
+    parse: parseMinutes, show: m => String(Math.round(m)), value: s => s.seconds / 60,
+    scale: "linear", from: 0, to: 120,           // slider spans 0 … 120 minutes
+    presets: [["All", "", ""], ["Under 10 min", "", "10"], ["10–20", "10", "20"],
+      ["20–40", "20", "40"], ["40+", "40", ""]],
+  },
+};
+
+function posToValue(r, p) {
+  const f = p / SLIDER_STEPS;
+  return r.scale === "log" ? nice(r.from * (r.to / r.from) ** f) : Math.round(r.from + (r.to - r.from) * f);
+}
+function valueToPos(r, v, end) {
+  if (v == null) return end === "lo" ? 0 : SLIDER_STEPS;
+  const f = r.scale === "log" ? (v <= r.from ? 0 : Math.log(v / r.from) / Math.log(r.to / r.from)) : (v - r.from) / (r.to - r.from);
+  return Math.round(Math.min(1, Math.max(0, f)) * SLIDER_STEPS);
+}
+// [lo, hi] from the text boxes (null = no limit); flags boxes it can't read
+function rangeOf(key) {
+  const r = RANGES[key], lo = r.parse($(key + "Min").value), hi = r.parse($(key + "Max").value);
+  $(key + "Min").classList.toggle("bad", Number.isNaN(lo));
+  $(key + "Max").classList.toggle("bad", Number.isNaN(hi));
   return [Number.isNaN(lo) ? null : lo, Number.isNaN(hi) ? null : hi];
 }
+function inRange(key, s) {
+  const [lo, hi] = rangeOf(key), v = RANGES[key].value(s);
+  return (lo == null || v >= lo) && (hi == null || v < hi);
+}
+function syncSlider(key) {
+  const [lo, hi] = rangeOf(key), [a, b] = $(key + "Slider").querySelectorAll("input");
+  a.value = valueToPos(RANGES[key], lo, "lo");
+  b.value = valueToPos(RANGES[key], hi, "hi");
+  a.style.zIndex = +a.value > SLIDER_STEPS * 0.9 ? 2 : "";  // keep the min handle grabbable near the right end
+  $(key + "Slider").querySelector("i").style.cssText = `left:${a.value / 10}%;right:${100 - b.value / 10}%`;
+}
 function renderChips() {
-  const [lo, hi] = subsRange();
-  $("subsChips").innerHTML = SUBS_PRESETS.map(([label, a, b], i) => {
-    const on = parseSubs(a) === lo && parseSubs(b) === hi;
-    return `<button class="chip ${on ? "on" : ""}" data-preset="${i}">${label}</button>`;
-  }).join("");
+  for (const [key, r] of Object.entries(RANGES)) {
+    const [lo, hi] = rangeOf(key);
+    $(key + "Chips").innerHTML = r.presets.map(([label, a, b], i) =>
+      `<button class="chip ${r.parse(a) === lo && r.parse(b) === hi ? "on" : ""}" data-preset="${i}">${label}</button>`).join("");
+    syncSlider(key);
+  }
 }
-function saveSubs() {
-  try { localStorage.setItem("subsRange", JSON.stringify([$("subsMin").value, $("subsMax").value])); } catch {}
+function saveRanges() {
+  const out = Object.fromEntries(Object.keys(RANGES).map(k => [k, [$(k + "Min").value, $(k + "Max").value]]));
+  try { localStorage.setItem("ranges", JSON.stringify(out)); } catch {}
 }
-
+function loadRanges() {
+  let saved = {};
+  try {
+    saved = JSON.parse(localStorage.getItem("ranges") || "{}");
+    const old = localStorage.getItem("subsRange");  // from before length existed
+    if (old && !saved.subs) saved.subs = JSON.parse(old);
+  } catch {}
+  for (const k of Object.keys(RANGES)) [$(k + "Min").value, $(k + "Max").value] = saved[k] || ["", ""];
+}
+const activeRanges = () => Object.keys(RANGES).filter(k => rangeOf(k).some(v => v != null)).length;
 
 // --- Audience fit: how well an outlier matches *your* viewers (0–100) ---
 // Built from the My channel data: what viewers search, which topics your own outliers
@@ -509,9 +599,8 @@ const fitPill = s => {
 
 function visible() {
   const ch = $("chFilter").value, src = $("srcFilter").value, sort = $("sort").value;
-  const [lo, hi] = subsRange();
   const list = S.signals.filter(s => s.status === tab && (!ch || s.channel_id === ch) && (!src || s.source === src)
-    && (lo == null || s.subscribers >= lo) && (hi == null || s.subscribers < hi));
+    && Object.keys(RANGES).every(k => inRange(k, s)));
   const key = { score: s => s.score, ratio: s => s.score / s.min_score, views: s => s.views, vph, foryou: forYou,
     fit: s => audienceFit(s)?.score ?? -1,
     newest: s => +new Date(s.published) }[sort];
@@ -547,8 +636,7 @@ function render() {
   ].filter(Boolean).join(" · ");
   $("rules").textContent = `${active} channels · ${kws} keywords · last ${S.lookback_days} days · `
     + `bar 3× at 300K+ subs, 5× at 100K+, 10× below`;
-  const [lo, hi] = subsRange();
-  $("filterCount").textContent = [$("srcFilter").value, $("chFilter").value, lo ?? hi].filter(v => v != null && v !== "").length || "";
+  $("filterCount").textContent = [$("srcFilter").value, $("chFilter").value].filter(Boolean).length + activeRanges() || "";
 
   renderChips();
   const items = visible();
@@ -688,12 +776,22 @@ $("tabs").onclick = e => {
   if (tab === "me" && !M) loadMe();
 };
 $("chFilter").onchange = $("srcFilter").onchange = $("sort").onchange = () => { sel = 0; render(); };
-$("subsChips").onclick = e => {
-  const c = e.target.closest("[data-preset]"); if (!c) return;
-  const [, a, b] = SUBS_PRESETS[+c.dataset.preset];
-  $("subsMin").value = a; $("subsMax").value = b; saveSubs(); sel = 0; render();
-};
-$("subsMin").oninput = $("subsMax").oninput = () => { saveSubs(); sel = 0; render(); };
+for (const [key, r] of Object.entries(RANGES)) {
+  $(key + "Chips").onclick = e => {
+    const c = e.target.closest("[data-preset]"); if (!c) return;
+    [$(key + "Min").value, $(key + "Max").value] = r.presets[+c.dataset.preset].slice(1);
+    saveRanges(); sel = 0; render();
+  };
+  $(key + "Min").oninput = $(key + "Max").oninput = () => { saveRanges(); sel = 0; render(); };
+  // Dragging a handle writes its value into the matching text box (blank at either end)
+  $(key + "Slider").oninput = e => {
+    const [a, b] = $(key + "Slider").querySelectorAll("input");
+    if (+a.value > +b.value) (e.target === a ? a : b).value = e.target === a ? b.value : a.value;
+    $(key + "Min").value = +a.value <= 0 ? "" : r.show(posToValue(r, +a.value));
+    $(key + "Max").value = +b.value >= SLIDER_STEPS ? "" : r.show(posToValue(r, +b.value));
+    saveRanges(); sel = 0; render();
+  };
+}
 // Keep the header on one line: compact step by step until nothing overflows
 // order matters: spacing tightens before the name or tab counts disappear
 const FIT_STEPS = ["c1", "c2", "c5", "c3", "c4", "c6"];
@@ -764,10 +862,11 @@ $("removeOutdated").onclick = async () => {
 };
 
 $("resetFilters").onclick = () => {
-  $("srcFilter").value = $("chFilter").value = $("subsMin").value = $("subsMax").value = "";
-  $("sort").value = "score"; saveSubs(); sel = 0; render();
+  $("srcFilter").value = $("chFilter").value = "";
+  for (const k of Object.keys(RANGES)) $(k + "Min").value = $(k + "Max").value = "";
+  $("sort").value = "foryou"; saveRanges(); sel = 0; render();
 };
-try { const [a, b] = JSON.parse(localStorage.getItem("subsRange") || '["",""]'); $("subsMin").value = a; $("subsMax").value = b; } catch {}
+loadRanges();
 $("grid").onclick = e => {
   const c = e.target.closest(".card"); if (!c) return;
   sel = +c.dataset.i;
