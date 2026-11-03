@@ -521,6 +521,28 @@ class Handler(BaseHTTPRequestHandler):
                 f'<body style="font:16px system-ui;padding:40px">{"✅" if ok else "⚠️"} {msg}</body>')
         if url.path == "/api/youtube":
             return self.send_json(youtube_auth.status())
+        if url.path == "/api/mychannel/retention":
+            # One video's retention curve; cached, since a published video's curve barely moves
+            vid = urllib.parse.parse_qs(url.query).get("video", [""])[0]
+            if not re.fullmatch(r"[\w-]{11}", vid):
+                return self.send_json({"error": "bad video id"}, 400)
+            with db() as conn:
+                row = conn.execute("SELECT value FROM kv WHERE key=?", (f"retention:{vid}",)).fetchone()
+            if row and "fresh" not in url.query:
+                return self.send_json(json.loads(row[0]))
+            with db() as conn:
+                mine = conn.execute("SELECT value FROM kv WHERE key='my_channel'").fetchone()
+            published = next((v["published"] for v in json.loads(mine[0]).get("videos", []) if v["id"] == vid),
+                             my_channel.SINCE) if mine else my_channel.SINCE
+            try:
+                curve = {"video": vid, "points": my_channel.retention(vid, published), "updated": now_iso()}
+            except Exception as e:
+                return self.send_json({"error": api_error(e)}, 400)
+            with write_lock, db() as conn:
+                conn.execute("INSERT INTO kv (key, value, updated) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE"
+                             " SET value=excluded.value, updated=excluded.updated",
+                             (f"retention:{vid}", json.dumps(curve), now_iso()))
+            return self.send_json(curve)
         if url.path == "/api/mychannel":
             with db() as conn:
                 row = conn.execute("SELECT value FROM kv WHERE key='my_channel'").fetchone()
