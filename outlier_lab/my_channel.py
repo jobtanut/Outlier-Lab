@@ -19,7 +19,6 @@ REPORTS = "https://youtubeanalytics.googleapis.com/v2/reports"
 REPORTING = "https://youtubereporting.googleapis.com/v1"
 REACH_REPORT = "channel_reach_basic_a1"
 PROFILE_DAYS = 90      # window for search terms, traffic and audience
-KPI_DAYS = 30
 SINCE = "2015-01-01"   # before the channel existed, so per-video stats are lifetime
 
 
@@ -39,24 +38,34 @@ def reach_stats():
     """Impressions and CTR per video. The Analytics API doesn't offer them, so they come from
     the Reporting API's daily 'channel_reach_basic_a1' files. The first refresh creates the
     report job; YouTube then publishes a file per day (first one within ~48 hours).
-    Returns ({video_id: {"impressions", "clicks"}}, first_date, last_date) or ({}, None, None)."""
+    Returns ({video_id: {"impressions", "clicks"}}, first_date, last_date, {date: [impressions, clicks]}),
+    or empty values before the first file exists."""
     jobs = ya.get(REPORTING + "/jobs").get("jobs", [])
     job = next((j for j in jobs if j["reportTypeId"] == REACH_REPORT), None)
     if not job:
         ya.post(REPORTING + "/jobs", {"reportTypeId": REACH_REPORT, "name": "Outlier Lab reach"})
-        return {}, None, None
+        return {}, None, None, {}
     reports = ya.get(REPORTING + f"/jobs/{job['id']}/reports", pageSize=500).get("reports", [])
-    per_video, days = {}, []
+    # YouTube can re-issue a day's file (e.g. after a correction); keep only the newest per day
+    latest = {}
     for rep in reports:
+        day = rep["startTime"][:10]
+        if day not in latest or rep["createTime"] > latest[day]["createTime"]:
+            latest[day] = rep
+    per_video, daily = {}, {}
+    for day, rep in latest.items():
         rows = list(csv.DictReader(io.StringIO(ya.download(rep["downloadUrl"]))))
-        days.append(rep["startTime"][:10])
+        d = daily.setdefault(day, [0, 0])
         for r in rows:
             impressions = float(r.get("video_thumbnail_impressions") or 0)
-            ctr = float(r.get("video_thumbnail_impressions_ctr") or 0)  # a ratio, e.g. 0.054
+            clicks = impressions * float(r.get("video_thumbnail_impressions_ctr") or 0)  # ctr is a ratio
             v = per_video.setdefault(r["video_id"], {"impressions": 0, "clicks": 0})
             v["impressions"] += impressions
-            v["clicks"] += impressions * ctr
-    return per_video, (min(days) if days else None), (max(days) if days else None)
+            v["clicks"] += clicks
+            d[0] += impressions
+            d[1] += clicks
+    days = sorted(daily)
+    return per_video, (days[0] if days else None), (days[-1] if days else None), daily
 
 
 def my_videos(channel_id, key, end):
@@ -99,7 +108,10 @@ def suggested_from(start, end, key):
 
 # Sections refresh independently (each has its own button on the board); a browser reload
 # refreshes them all. Order matters: "videos" rebuilds the list that "ctr" fills in.
-SECTIONS = ("kpis", "videos", "ctr", "search_terms", "traffic", "suggested_from", "audience")
+SECTIONS = ("pulse", "trend", "videos", "ctr", "search_terms", "traffic", "suggested_from", "audience")
+PULSE_DAYS = 28    # Pulse compares the last 28 days with the 28 before
+TREND_DAYS = 90
+PULSE_METRICS = "views,estimatedMinutesWatched,averageViewDuration,subscribersGained,subscribersLost"
 
 
 def build(key, progress=lambda msg, frac=None: None, sections=SECTIONS, previous=None):
@@ -107,12 +119,11 @@ def build(key, progress=lambda msg, frac=None: None, sections=SECTIONS, previous
     end_d = date.today() - timedelta(days=1)  # Analytics lags about a day
     end = end_d.isoformat()
     p_start = (end_d - timedelta(days=PROFILE_DAYS - 1)).isoformat()
-    k_start = (end_d - timedelta(days=KPI_DAYS - 1)).isoformat()
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     cid, title, subs = ya.my_channel()
     out = dict(previous or {})
     out.update(channel_id=cid, title=title, subscribers=subs, bar=of.min_score_for(subs),
-               profile_days=PROFILE_DAYS, kpi_days=KPI_DAYS, updated=now)
+               profile_days=PROFILE_DAYS, updated=now)
     errors, stamps = dict(out.get("errors", {})), dict(out.get("section_updated", {}))
 
     def videos():
@@ -122,7 +133,7 @@ def build(key, progress=lambda msg, frac=None: None, sections=SECTIONS, previous
             v["ctr"], v["impressions"] = old.get(v["id"], {}).get("ctr"), old.get(v["id"], {}).get("impressions")
 
     def ctr():
-        reach, out["ctr_from"], out["ctr_to"] = reach_stats()
+        reach, out["ctr_from"], out["ctr_to"], out["reach_daily"] = reach_stats()
         for v in out.get("videos", []):
             r = reach.get(v["id"])
             v["impressions"] = round(r["impressions"]) if r else None
@@ -132,9 +143,23 @@ def build(key, progress=lambda msg, frac=None: None, sections=SECTIONS, previous
         out["age_gender"] = report(p_start, end, "viewerPercentage", dimensions="ageGroup,gender")
         out["countries"] = report(p_start, end, "views", dimensions="country", sort="-views", maxResults=8)
 
+    def pulse():
+        cur_start = end_d - timedelta(days=PULSE_DAYS - 1)
+        prev_end = cur_start - timedelta(days=1)
+        prev_start = prev_end - timedelta(days=PULSE_DAYS - 1)
+        out["pulse"] = {
+            "days": PULSE_DAYS, "from": cur_start.isoformat(), "to": end,
+            "current": (report(cur_start.isoformat(), end, PULSE_METRICS) or [{}])[0],
+            "previous": (report(prev_start.isoformat(), prev_end.isoformat(), PULSE_METRICS) or [{}])[0],
+        }
+
+    def trend():
+        start = (end_d - timedelta(days=TREND_DAYS - 1)).isoformat()
+        out["trend"] = report(start, end, "views,subscribersGained,subscribersLost", dimensions="day", sort="day")
+
     fetchers = {
-        "kpis": lambda: out.__setitem__("kpis", report(
-            k_start, end, "views,estimatedMinutesWatched,averageViewDuration,subscribersGained")[0]),
+        "pulse": pulse,
+        "trend": trend,
         "videos": videos,
         "ctr": ctr,
         "search_terms": lambda: out.__setitem__("search_terms", report(
@@ -157,3 +182,15 @@ def build(key, progress=lambda msg, frac=None: None, sections=SECTIONS, previous
             errors[name] = str(e)
     out["errors"], out["section_updated"] = errors, stamps
     return out
+
+
+def retention(video_id, published=SINCE):
+    """Audience retention curve for one of your videos: share of viewers still watching at
+    each point (0 = start, 1 = end), plus how that compares with similar-length videos on
+    YouTube (relativeRetentionPerformance: 0.5 = typical, higher = better).
+    Starting the query at the publish date keeps it fast: from 2015 it can take 20-30 s."""
+    end = (date.today() - timedelta(days=1)).isoformat()
+    rows = report(published, end, "audienceWatchRatio,relativeRetentionPerformance",
+                  dimensions="elapsedVideoTimeRatio", filters=f"video=={video_id}", sort="elapsedVideoTimeRatio")
+    return [{"t": r["elapsedVideoTimeRatio"], "watching": r["audienceWatchRatio"],
+             "relative": r["relativeRetentionPerformance"]} for r in rows]

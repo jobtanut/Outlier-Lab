@@ -80,7 +80,7 @@
   .panelbox { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; min-width: 0; }
   .panelbox h3 { margin: 0 0 10px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
   .panelbox h3 small { color: var(--muted); font-weight: 400; font-size: 12px; }
-  .vrow { display: grid; grid-template-columns: 96px minmax(0, 1fr) 78px 64px 92px 56px 52px; gap: 12px; align-items: center;
+  .vrow { display: grid; grid-template-columns: 96px minmax(0, 1fr) 58px 96px 58px 72px 62px 104px; gap: 12px; align-items: center;
     padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; }
   .vrow.head { border-top: 0; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; padding-top: 0; }
   .vrow img { width: 96px; aspect-ratio: 16/9; object-fit: cover; border-radius: 6px; display: block; background: var(--surface-2); }
@@ -108,10 +108,47 @@
   @media (max-width: 900px) {
     .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .profile { grid-template-columns: minmax(0, 1fr); }
-    .vrow { grid-template-columns: 72px minmax(0, 1fr) 70px 52px; gap: 10px; }
+    .vrow { grid-template-columns: 72px minmax(0, 1fr) 52px 84px; gap: 10px; }
     .vrow img { width: 72px; }
     .vrow .opt { display: none; }
   }
+
+  /* --- dashboard --- */
+  .vrow.clickable { cursor: pointer; } .vrow.clickable:hover, .vrow.open { background: var(--surface-2); }
+  .vrow .big { font-size: 14px; font-weight: 650; } .vrow .big small { font-weight: 400; color: var(--muted); font-size: 12px; }
+  .vrow .big.low, .vrow .big small.low { color: var(--bad); }
+  .vdetail { padding: 12px 14px 14px; margin: 0 0 6px; background: var(--surface-2); border-radius: 0 0 10px 10px; }
+  .vdetail .kpi { background: var(--surface); }
+  .kpis.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .kpi { display: flex; flex-direction: column; gap: 2px; }
+  .kpi b { font-size: 24px; font-weight: 650; }
+  .kpi .delta { font-size: 12px; font-weight: 600; color: var(--muted); }
+  .kpi .delta.up { color: var(--good); } .kpi .delta.down { color: var(--bad); }
+  .kpi small { color: var(--muted); font-size: 11px; }
+  .dash2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+  .chart { width: 100%; min-height: 40px; }
+  .chart svg { display: block; overflow: visible; font: 11px Inter, system-ui, sans-serif; }
+  .chart .grid { stroke: var(--border); stroke-width: 1; }
+  .chart .axis { fill: var(--muted); }
+  .chart .mark-line { fill: none; stroke: var(--accent-ink); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .chart .mark-area { fill: var(--accent-ink); opacity: .1; }
+  .chart .mark-dot, .chart .focus-dot { fill: var(--accent-ink); stroke: var(--surface); stroke-width: 2; }
+  .chart .mark-col { fill: var(--accent-ink); } .chart .mark-col.neg { fill: var(--bad); }
+  .chart .mark-col.dim { opacity: .35; }
+  .chart .crosshair { stroke: var(--muted); stroke-width: 1; }
+  .chart .hit { fill: transparent; cursor: crosshair; }
+  .chart .median { stroke: var(--muted); stroke-width: 1; opacity: .5; }
+  .chart .qlabel { fill: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .chart .qdot { fill: var(--accent-ink); stroke: var(--surface); stroke-width: 2; cursor: pointer; }
+  .chart .qdot:hover { r: 7; } .chart .qdot.sel { fill: var(--highlight); stroke: var(--accent-ink); }
+  .chart .annot { fill: var(--text); font-size: 11px; font-weight: 600; }
+  .charttip { position: fixed; z-index: 30; max-width: 280px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 12px; line-height: 1.45; box-shadow: 0 6px 24px rgba(0,0,0,.18); pointer-events: none; }
+  .pill.diag-winner { background: var(--good-soft); color: var(--good); }
+  .pill.diag-repackage { background: var(--highlight); color: var(--on-highlight); }
+  .pill.diag-hook { background: var(--accent-soft); color: var(--accent-ink); }
+  .pill.diag-low { background: var(--surface-2); color: var(--muted); }
+  @media (max-width: 900px) { .kpis.five { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dash2 { grid-template-columns: minmax(0, 1fr); } }
   /* compact header controls */
   /* The header is always one line. fitBar() adds these one at a time (in FIT_STEPS order) until it fits:
      c1 icon labels off · c2 scope picker shrinks to an arrow · c3 brand text off ·
@@ -385,6 +422,7 @@
   </div>
 </main>
 
+<div class="charttip" id="chartTip" hidden></div>
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer" aria-label="Channels and keywords">
   <header><h3>Channels &amp; keywords</h3><button class="btn" id="closeWatch">Close</button></header>
@@ -935,6 +973,69 @@ function rb(section, label = "") {
     <span>↻</span>${label ? " " + label : ""}</button>`;
 }
 
+// ---------- My channel dashboard ----------
+// Pulse → Do next → Trend → Diagnosis (CTR × retention) + Retention curve → Scorecard → Audience.
+// Charts are hand-built SVG sized to their box; each has a hover tooltip (#chartTip).
+let RET = null;                 // retention curve for the open video {video, points} | {loading} | {error}
+let OPEN = null;                // id of the video whose detail row is open in the scorecard
+const MIN_IMPRESSIONS = 300;    // below this a video's CTR is too noisy to judge
+const CTR_GOOD = 5;             // CTR (%) a video needs to count as clicking well
+const RET_GOOD = 40;            // retention (% of the video watched) a video needs to count as holding viewers
+const DIAG = {
+  winner:    { label: "Winner", tip: "Clicks and holds: make more like this" },
+  repackage: { label: "Re-package", tip: "40%+ retention but CTR under 5%: new thumbnail/title" },
+  hook:      { label: "Fix the hook", tip: "5%+ CTR but retention under 40%: tighten the opening" },
+  low:       { label: "Low priority", tip: "CTR under 5% and retention under 40%" },
+};
+const median = a => { const s = [...a].sort((x, y) => x - y); return s.length ? (s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : 0; };
+const subsPer1k = x => x.subs_gained != null && x.views ? x.subs_gained / x.views * 1000 : null;
+const niceMax = v => { if (!(v > 0)) return 1; const p = 10 ** Math.floor(Math.log10(v)); return [1, 2, 2.5, 5, 10].map(m => m * p).find(m => m >= v); };
+const shortDate = d => new Date(d + "T00:00:00").toLocaleDateString([], { day: "numeric", month: "short" });
+const pctDelta = (cur, prev) => prev ? (cur - prev) / prev * 100 : null;
+
+// Videos with enough impressions to judge, tagged by quadrant: CTR against 5%, retention against 40%
+function diagnose() {
+  const ok = (M.videos || []).filter(x => x.ctr != null && x.avd_pct != null && (x.impressions || 0) >= MIN_IMPRESSIONS);
+  const medCtr = CTR_GOOD, medRet = RET_GOOD;
+  for (const x of M.videos || []) {
+    const judged = ok.includes(x);
+    x.diag = !judged ? null : x.ctr >= medCtr ? (x.avd_pct >= medRet ? "winner" : "hook") : (x.avd_pct >= medRet ? "repackage" : "low");
+  }
+  return { ok, medCtr, medRet };
+}
+
+// CTR over the newest `days` of report files, and the same span before it (null if not enough files)
+function ctrWindows(days) {
+  const dates = Object.keys(M.reach_daily || {}).sort();
+  const sum = list => { const [i, c] = list.reduce((a, d) => [a[0] + M.reach_daily[d][0], a[1] + M.reach_daily[d][1]], [0, 0]); return i ? c / i * 100 : null; };
+  const cur = dates.slice(-days), prev = dates.slice(-2 * days, -days);
+  return { cur: sum(cur), prev: prev.length === days ? sum(prev) : null, from: cur[0], to: cur[cur.length - 1] };
+}
+
+function tile(label, value, delta, upIsGood, note) {
+  let d = "";
+  if (delta != null && isFinite(delta)) {
+    const good = Math.abs(delta) < 1 ? null : (delta > 0) === upIsGood;
+    d = `<span class="delta ${good == null ? "" : good ? "up" : "down"}">${delta > 0 ? "▲" : delta < 0 ? "▼" : "•"} ${Math.abs(delta).toFixed(0)}%</span>`;
+  }
+  return `<div class="kpi"><span>${label}</span><b>${value}</b>${d}${note ? `<small>${note}</small>` : ""}</div>`;
+}
+
+function renderPulse() {
+  const p = M.pulse; if (!p) return unavailable("pulse");
+  const c = p.current || {}, q = p.previous || {};
+  const net = (c.subscribersGained || 0) - (c.subscribersLost || 0), netPrev = (q.subscribersGained || 0) - (q.subscribersLost || 0);
+  const ctr = ctrWindows(p.days);
+  return `<div class="kpis five">
+    ${tile("Views", fmt(c.views), pctDelta(c.views, q.views), true)}
+    ${tile("Watch hours", fmt((c.estimatedMinutesWatched || 0) / 60), pctDelta(c.estimatedMinutesWatched, q.estimatedMinutesWatched), true)}
+    ${tile("Avg view duration", mmss(c.averageViewDuration), pctDelta(c.averageViewDuration, q.averageViewDuration), true)}
+    ${tile("Net subscribers", (net >= 0 ? "+" : "") + fmt(net), pctDelta(net, netPrev), true, `+${fmt(c.subscribersGained)} / −${fmt(c.subscribersLost)}`)}
+    ${tile("Thumbnail CTR", ctr.cur != null ? ctr.cur.toFixed(1) + "%" : "–", ctr.prev != null ? pctDelta(ctr.cur, ctr.prev) : null, true,
+      ctr.from ? `${shortDate(ctr.from)} – ${shortDate(ctr.to)}` : "waiting for reports")}
+  </div>`;
+}
+
 function renderMeView() {
   const v = $("meView");
   if (!M) { v.innerHTML = `<p class="hint">Loading…</p>`; return; }
@@ -945,12 +1046,10 @@ function renderMeView() {
       <p class="hint" style="margin-top:12px">Needs YouTube connected: Sources → My channel.</p></div>`;
     return;
   }
-  const k = M.kpis || {};
-  const sorters = { score: x => x.score, views: x => x.views, avd: x => x.avd_pct ?? -1,
-    subs: x => x.subs_gained ?? -1, newest: x => +new Date(x.published_at) };
+  const d = diagnose();
+  const sorters = { score: x => x.score, views: x => x.views, ctr: x => x.ctr ?? -1, avd: x => x.avd_pct ?? -1,
+    conv: x => subsPer1k(x) ?? -1, subs: x => x.subs_gained ?? -1, newest: x => +new Date(x.published_at) };
   const vids = [...M.videos].sort((a, b) => sorters[meSort](b) - sorters[meSort](a));
-  const beat = M.videos.filter(x => x.score >= 2).length;
-  const hasCtr = M.videos.some(x => x.ctr != null);
   const pct = (n, total) => total ? (n / total * 100).toFixed(1) + "%" : "–";
   const trafficTotal = (M.traffic || []).reduce((a, r) => a + r.views, 0);
   const ages = {}, genders = {};
@@ -965,40 +1064,51 @@ function renderMeView() {
     <h2>${esc(M.title)}</h2>${subsPill(M.subscribers)}
     <span class="spacer"></span>
     <span class="hint" style="margin:0">Updated ${new Date(M.updated).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</span>
-    <label class="me-toggle" title="When on, reloading the page refreshes every section (~7 API units)">
+    <label class="me-toggle" title="When on, reloading the page refreshes every section (~10 API units)">
       <input type="checkbox" data-me-auto ${autoRefreshMe() ? "checked" : ""}> Refresh on page load</label>
   </div>
-  <div class="me-sub">Last ${M.kpi_days} days ${rb("kpis")}</div>
-  <div class="kpis">
-    <div class="kpi"><b>${fmt(k.views)}</b><span>views · last ${M.kpi_days} days</span></div>
-    <div class="kpi"><b>${fmt((k.estimatedMinutesWatched || 0) / 60)}</b><span>watch hours</span></div>
-    <div class="kpi"><b>${mmss(k.averageViewDuration)}</b><span>avg view duration</span></div>
-    <div class="kpi"><b>+${fmt(k.subscribersGained)}</b><span>subscribers gained</span></div>
-  </div>
+
+  <div class="me-sub">Pulse · last ${M.pulse?.days || 28} days vs the ${M.pulse?.days || 28} before ${rb("pulse")}</div>
+  ${renderPulse()}
+
+  <div class="panelbox"><h3>Daily views ${rb("trend")} <small>last ${M.trend?.length || 90} days · ● upload day</small></h3>
+    <div class="chart" id="trendChart"></div>
+    <div class="subhead">Net subscribers per day</div>
+    <div class="chart" id="subsChart"></div></div>
+
+  <div class="panelbox"><h3>Diagnosis ${rb("ctr", "CTR")} <small>each dot is a video · CTR line at ${CTR_GOOD}% · retention line at ${RET_GOOD}% · click a dot to open it</small></h3>
+      ${d.ok.length >= 4 ? `<div class="chart" id="quadChart"></div>
+        <p class="hint" style="margin:6px 0 0">${d.ok.length} videos with ${MIN_IMPRESSIONS}+ impressions${M.ctr_from ? `, CTR from ${shortDate(M.ctr_from.slice(0, 10))} to ${shortDate(M.ctr_to.slice(0, 10))}` : ""}.</p>`
+        : `<p class="hint">Needs CTR for at least 4 videos. Press ↻ CTR.</p>`}</div>
 
   <div class="panelbox">
-    <h3>Your outliers ${rb("videos")} <small>${beat} of ${M.videos.length} long-form videos at 2× your same-period average or more</small>
-      <span class="spacer" style="flex:1"></span>${rb("ctr", "CTR")}
+    <h3>Scorecard ${rb("videos")} <small>${M.videos.filter(x => x.score >= 2).length} of ${M.videos.length} long-form videos at 2× your same-period average or more</small>
+      <span class="spacer" style="flex:1"></span>
       <select class="ctl" data-me-sort style="font-size:12px;padding:3px 8px">
-        ${[["score", "Outlier score"], ["views", "Views"], ["avd", "Retention %"], ["subs", "Subs gained"], ["newest", "Newest"]]
+        ${[["score", "Outlier score"], ["views", "Views"], ["ctr", "CTR"], ["avd", "Retention %"], ["conv", "Subs per 1K views"],
+          ["subs", "Subs gained"], ["newest", "Newest"]]
           .map(([val, lab]) => `<option value="${val}" ${val === meSort ? "selected" : ""}>${lab}</option>`).join("")}
       </select></h3>
-    <div class="vrow head"><span></span><span>Video</span><span class="num">Score</span><span class="num">Views</span>
-      <span class="num opt">Avg duration</span><span class="num opt">Subs</span><span class="num opt">CTR</span></div>
-    ${vids.map(x => `<div class="vrow">
+    <div class="vrow head"><span></span><span>Video <small style="text-transform:none;letter-spacing:0;font-weight:400">· click a row for details</small></span>
+      <span class="num">CTR</span><span class="num">Avg duration</span><span class="num opt">Views</span>
+      <span class="num opt">Score</span><span class="num opt">Subs / 1K</span><span class="opt">Diagnosis</span></div>
+    ${vids.map(x => `<div class="vrow clickable ${OPEN === x.id ? "open" : ""}" data-open="${x.id}" id="row-${x.id}">
       <a href="${x.url}" target="_blank" rel="noopener"><img loading="lazy" src="https://i.ytimg.com/vi/${x.id}/mqdefault.jpg" alt=""></a>
       <span><a class="vt" href="${x.url}" target="_blank" rel="noopener">${esc(x.title)}</a>
-        <span class="vsub">${x.published} · ${dur(x.seconds)}</span></span>
-      <span class="num"><span class="badge ${tier(x.score) || (x.score >= 2 ? "lift" : "")}"
+        <span class="vsub">${x.published} · ${dur(x.seconds)} ·
+          <a class="vsub" href="https://studio.youtube.com/video/${x.id}/analytics" target="_blank" rel="noopener">Studio ↗</a></span></span>
+      <span class="num big ${x.ctr != null && x.ctr < CTR_GOOD ? "low" : ""}" title="${x.impressions ? fmt(x.impressions) + " impressions" : "No impressions in the report window"}">${x.ctr != null ? x.ctr.toFixed(1) + "%" : "–"}</span>
+      <span class="num big">${mmss(x.avd)}${x.avd_pct != null ? `<small class="${x.avd_pct < RET_GOOD ? "low" : ""}"> · ${Math.round(x.avd_pct)}%</small>` : ""}</span>
+      <span class="num opt">${fmt(x.views)}</span>
+      <span class="num opt"><span class="badge ${tier(x.score) || (x.score >= 2 ? "lift" : "")}"
         title="${fmt(x.views)} views ÷ ${fmt(x.baseline)} your avg (same period)">${x.baseline ? x.score.toFixed(2) + "×" : "–"}</span></span>
-      <span class="num">${fmt(x.views)}</span>
-      <span class="num opt">${mmss(x.avd)}${x.avd_pct != null ? ` · ${Math.round(x.avd_pct)}%` : ""}</span>
-      <span class="num opt">${x.subs_gained != null ? "+" + fmt(x.subs_gained) : "–"}</span>
-      <span class="num opt" title="${hasCtr ? `Thumbnail CTR, ${M.ctr_from} to ${M.ctr_to}` : "YouTube is preparing the first CTR report (up to ~48 hours after setup)"}">${x.ctr != null ? x.ctr.toFixed(1) + "%" : "–"}</span>
-    </div>`).join("")}
+      <span class="num opt">${subsPer1k(x) != null ? subsPer1k(x).toFixed(1) : "–"}</span>
+      <span class="opt">${x.diag ? `<span class="pill diag-${x.diag}" title="${DIAG[x.diag].tip}">${DIAG[x.diag].label}</span>` : ""}</span>
+    </div>${OPEN === x.id ? videoDetail(x) : ""}`).join("")}
     ${M.shorts ? `<p class="hint" style="margin:10px 0 0">${M.shorts} Short(s) left out: scores compare long-form videos.</p>` : ""}
   </div>
 
+  <div class="me-sub">Audience</div>
   <div class="profile">
     <div class="panelbox"><h3>What they search ${rb("search_terms")} <small>YouTube search terms · last ${M.profile_days} days</small></h3>
       ${M.search_terms ? bars(M.search_terms.slice(0, 15), r => r.insightTrafficSourceDetail, r => r.views) : unavailable("search_terms")}</div>
@@ -1019,7 +1129,176 @@ function renderMeView() {
         : unavailable("audience")}
       ${M.countries ? `<div class="subhead">Top countries</div>${bars(M.countries, r => countryName(r.country), r => r.views)}` : ""}</div>
   </div>`;
+  drawCharts(d);
 }
+
+// ---------- charts ----------
+const tipEl = () => $("chartTip");
+function showTip(html, cx, cy) {
+  const t = tipEl(); t.innerHTML = html; t.hidden = false;
+  t.style.left = Math.max(8, Math.min(innerWidth - t.offsetWidth - 8, cx + 14)) + "px";
+  t.style.top = Math.max(8, cy - t.offsetHeight - 12) + "px";
+}
+function hideTip() { tipEl().hidden = true; }
+const yTicks = (max, y, x0, x1, fmtv = fmt) => [0, max / 2, max].map(t =>
+  `<line class="grid" x1="${x0}" x2="${x1}" y1="${y(t)}" y2="${y(t)}"/><text class="axis" x="${x0 - 6}" y="${y(t) + 4}" text-anchor="end">${fmtv(t)}</text>`).join("");
+
+function drawCharts(d) {
+  // A chart drawn while its box is hidden would get zero/negative widths; wait until it's laid out
+  const box = $("trendChart") || $("quadChart") || $("retChart");
+  if (box && box.clientWidth < 80) { requestAnimationFrame(() => tab === "me" && drawCharts(d)); return; }
+  if ($("trendChart")) drawTrend();
+  if ($("quadChart")) drawQuadrant(d);
+  if ($("retChart")) drawRetention();
+}
+
+// The open video's detail: its numbers at a glance, then its retention curve
+function videoDetail(x) {
+  return `<div class="vdetail">
+    <div class="kpis five">
+      ${tile("Thumbnail CTR", x.ctr != null ? x.ctr.toFixed(1) + "%" : "–", null, true, x.impressions ? `${fmt(x.impressions)} impressions` : "no impressions in window")}
+      ${tile("Avg view duration", mmss(x.avd), null, true, x.avd_pct != null ? `${Math.round(x.avd_pct)}% of ${dur(x.seconds)}` : "")}
+      ${tile("Views", fmt(x.views), null, true, x.baseline ? `${x.score.toFixed(2)}× your avg then` : "")}
+      ${tile("Subscribers", x.subs_gained != null ? "+" + fmt(x.subs_gained) : "–", null, true, subsPer1k(x) != null ? `${subsPer1k(x).toFixed(1)} per 1K views` : "")}
+      ${tile("Diagnosis", x.diag ? DIAG[x.diag].label : "–", null, true, x.diag ? DIAG[x.diag].tip : "needs 300+ impressions")}
+    </div>
+    <div class="subhead">Retention · share of viewers still watching</div>
+    <div class="chart" id="retChart"></div><p class="hint" id="retNote" style="margin:6px 0 0"></p>
+  </div>`;
+}
+function openVideo(id) {
+  OPEN = OPEN === id ? null : id;
+  if (OPEN && RET?.id !== OPEN) loadRetention(OPEN); else renderMeView();
+  if (OPEN) requestAnimationFrame(() => $("row-" + OPEN)?.scrollIntoView({ block: "center", behavior: "smooth" }));
+}
+
+function drawTrend() {
+  const el = $("trendChart"), rows = M.trend || [];
+  if (!rows.length) { el.innerHTML = unavailable("trend"); $("subsChart").innerHTML = ""; return; }
+  const W = el.clientWidth, H = 190, L = 44, R = 12, T = 10, B = 24, n = rows.length;
+  const max = niceMax(Math.max(...rows.map(r => r.views)));
+  const x = i => L + (W - L - R) * i / Math.max(1, n - 1), y = v => T + (H - T - B) * (1 - v / max);
+  const line = rows.map((r, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(r.views).toFixed(1)}`).join("");
+  const uploads = {};
+  for (const v of M.videos || []) (uploads[v.published] ||= []).push(v.title);
+  const dots = rows.map((r, i) => uploads[r.day] ? `<circle class="mark-dot" cx="${x(i)}" cy="${y(r.views)}" r="4.5"/>` : "").join("");
+  const xl = [0, Math.floor(n / 2), n - 1].map((i, k) =>
+    `<text class="axis" x="${x(i)}" y="${H - 6}" text-anchor="${["start", "middle", "end"][k]}">${shortDate(rows[i].day)}</text>`).join("");
+  el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="Daily views, last ${n} days">
+    ${yTicks(max, y, L, W - R)}
+    <path class="mark-area" d="${line}L${x(n - 1)},${y(0)}L${x(0)},${y(0)}Z"/><path class="mark-line" d="${line}"/>${dots}${xl}
+    <line class="crosshair" id="trendX" y1="${T}" y2="${H - B}" visibility="hidden"/>
+    <circle class="focus-dot" id="trendDot" r="5" visibility="hidden"/>
+    <rect class="hit" x="${L}" y="0" width="${W - L - R}" height="${H}"/></svg>`;
+  const svg = el.querySelector("svg"), hit = svg.querySelector(".hit");
+  hit.onmousemove = e => {
+    const i = Math.max(0, Math.min(n - 1, Math.round((e.offsetX - L) / (W - L - R) * (n - 1)))), r = rows[i];
+    svg.querySelector("#trendX").setAttribute("x1", x(i)); svg.querySelector("#trendX").setAttribute("x2", x(i));
+    svg.querySelector("#trendX").setAttribute("visibility", "visible");
+    Object.entries({ cx: x(i), cy: y(r.views), visibility: "visible" }).forEach(([k, v]) => svg.querySelector("#trendDot").setAttribute(k, v));
+    showTip(`<b>${shortDate(r.day)}</b><br>${fmt(r.views)} views<br>+${r.subscribersGained} / −${r.subscribersLost} subscribers`
+      + (uploads[r.day] ? `<br>● ${uploads[r.day].map(esc).join("<br>● ")}` : ""), e.clientX, e.clientY);
+  };
+  hit.onmouseleave = () => { hideTip(); svg.querySelector("#trendX").setAttribute("visibility", "hidden"); svg.querySelector("#trendDot").setAttribute("visibility", "hidden"); };
+
+  // Net subscribers per day: its own chart (different scale), columns from a zero baseline
+  const sEl = $("subsChart"), SH = 90, net = rows.map(r => r.subscribersGained - r.subscribersLost);
+  const top = niceMax(Math.max(1, ...net)), bot = Math.min(0, ...net);
+  const sy = v => T + (SH - T - 18) * (top - v) / (top - bot), slot = (W - L - R) / n, bw = Math.max(2, Math.min(24, slot - 2));
+  const cols = net.map((v, i) => {
+    const h = Math.abs(sy(v) - sy(0)), cx = L + slot * i + (slot - bw) / 2;
+    return `<path class="mark-col${v < 0 ? " neg" : ""}" data-i="${i}" d="M${cx},${sy(0)}V${v >= 0 ? sy(0) - Math.max(0, h - 2) : sy(0) + Math.max(0, h - 2)}`
+      + `q0,${v >= 0 ? -2 : 2} 2,${v >= 0 ? -2 : 2}h${bw - 4}q2,0 2,${v >= 0 ? 2 : -2}V${sy(0)}Z"/>`;
+  }).join("");
+  sEl.innerHTML = `<svg width="${W}" height="${SH}" role="img" aria-label="Net subscribers per day">
+    <line class="grid" x1="${L}" x2="${W - R}" y1="${sy(0)}" y2="${sy(0)}"/>
+    <text class="axis" x="${L - 6}" y="${sy(top) + 4}" text-anchor="end">${fmt(top)}</text>
+    <text class="axis" x="${L - 6}" y="${sy(0) + 4}" text-anchor="end">0</text>${cols}
+    <rect class="hit" x="${L}" y="0" width="${W - L - R}" height="${SH}"/></svg>`;
+  const sh = sEl.querySelector(".hit");
+  sh.onmousemove = e => {
+    const i = Math.max(0, Math.min(n - 1, Math.floor((e.offsetX - L) / slot))), r = rows[i];
+    sEl.querySelectorAll(".mark-col").forEach(c => c.classList.toggle("dim", +c.dataset.i !== i));
+    showTip(`<b>${shortDate(r.day)}</b><br>Net ${net[i] >= 0 ? "+" : ""}${net[i]} (+${r.subscribersGained} / −${r.subscribersLost})`, e.clientX, e.clientY);
+  };
+  sh.onmouseleave = () => { hideTip(); sEl.querySelectorAll(".mark-col").forEach(c => c.classList.remove("dim")); };
+}
+
+function drawQuadrant(d) {
+  const el = $("quadChart"), W = el.clientWidth, H = 300, L = 44, R = 14, T = 12, B = 30;
+  const xMax = Math.min(100, niceMax(Math.max(...d.ok.map(v => v.avd_pct)) * 1.05)), yMax = niceMax(Math.max(...d.ok.map(v => v.ctr)) * 1.05);
+  const x = v => L + (W - L - R) * v / xMax, y = v => T + (H - T - B) * (1 - v / yMax);
+  const corner = (cx, cy, anchor, text) => `<text class="qlabel" x="${cx}" y="${cy}" text-anchor="${anchor}">${text}</text>`;
+  const dots = d.ok.map((v, i) => `<circle class="qdot${RET?.id === v.id ? " sel" : ""}" data-i="${i}" cx="${x(v.avd_pct)}" cy="${y(v.ctr)}" r="${RET?.id === v.id ? 6.5 : 5}"/>`).join("");
+  el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="CTR against retention for each video">
+    ${yTicks(yMax, y, L, W - R, n => n.toFixed(n < 10 && n % 1 ? 1 : 0) + "%")}
+    ${[0, xMax / 2, xMax].map(t => `<text class="axis" x="${x(t)}" y="${H - 14}" text-anchor="middle">${t}%</text>`).join("")}
+    <text class="axis" x="${W - R}" y="${H - 2}" text-anchor="end">retention (% of video watched) →</text>
+    <text class="axis" x="${L}" y="${T - 2}">CTR ↑</text>
+    <line class="median" x1="${x(d.medRet)}" x2="${x(d.medRet)}" y1="${T}" y2="${H - B}"/>
+    <line class="median" x1="${L}" x2="${W - R}" y1="${y(d.medCtr)}" y2="${y(d.medCtr)}"/>
+    ${corner(W - R - 4, T + 14, "end", "Winners")}${corner(W - R - 4, H - B - 6, "end", "Re-package")}
+    ${corner(L + 6, T + 14, "start", "Fix the hook")}${corner(L + 6, H - B - 6, "start", "Low priority")}
+    ${dots}</svg>`;
+  el.querySelectorAll(".qdot").forEach(c => {
+    const v = d.ok[+c.dataset.i];
+    c.onmousemove = e => showTip(`<b>${esc(v.title)}</b><br>CTR ${v.ctr.toFixed(1)}% · retention ${Math.round(v.avd_pct)}%<br>`
+      + `${fmt(v.views)} views · ${fmt(v.impressions)} impressions<br><i>${DIAG[v.diag].label}</i>: ${DIAG[v.diag].tip}<br><small>Click to open this video</small>`, e.clientX, e.clientY);
+    c.onmouseleave = hideTip;
+    c.onclick = () => { hideTip(); if (OPEN !== v.id) openVideo(v.id); };
+  });
+}
+
+async function loadRetention(id) {
+  RET = { id, loading: true }; if ($("retChart")) drawRetention();
+  try {
+    const r = await (await fetch(`/api/mychannel/retention?video=${id}`)).json();
+    RET = r.error ? { id, error: r.error } : { ...r, id };
+  } catch (e) { RET = { id, error: String(e) }; }
+  if (tab === "me" && M?.updated) renderMeView();
+}
+
+function drawRetention() {
+  const el = $("retChart"), note = $("retNote"), vid = (M.videos || []).find(v => v.id === RET?.id);
+  if (!RET || RET.loading) { el.innerHTML = `<p class="hint">Loading retention… (first time per video can take a few seconds)</p>`; note.textContent = ""; return; }
+  if (RET.error || !RET.points?.length) { el.innerHTML = `<p class="hint">No retention data for this video${RET.error ? ": " + esc(RET.error.slice(0, 100)) : ""}.</p>`; note.textContent = ""; return; }
+  const pts = RET.points, W = el.clientWidth, H = 240, L = 44, R = 12, T = 10, B = 24, secs = vid?.seconds || 0;
+  const yMax = niceMax(Math.max(1, ...pts.map(p => p.watching)) * 100);
+  const x = t => L + (W - L - R) * t, y = v => T + (H - T - B) * (1 - v * 100 / yMax);
+  const line = pts.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.watching).toFixed(1)}`).join("");
+  // Biggest drop: steepest fall over ~3 points, ignoring the first 5% (everyone skims the intro) and the end card
+  let worst = null;
+  for (let i = 3; i < pts.length; i++) {
+    if (pts[i].t < 0.05 || pts[i].t > 0.95) continue;
+    const fall = pts[i - 3].watching - pts[i].watching;
+    if (!worst || fall > worst.fall) worst = { i, fall };
+  }
+  const at = t => mmss(t * secs);
+  const drop = worst && worst.fall > 0.02 ? pts[worst.i] : null;
+  el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="Retention curve">
+    ${yTicks(yMax, v => y(v / 100), L, W - R, n => Math.round(n) + "%")}
+    ${[0, 0.5, 1].map((t, k) => `<text class="axis" x="${x(t)}" y="${H - 6}" text-anchor="${["start", "middle", "end"][k]}">${secs ? at(t) : t * 100 + "%"}</text>`).join("")}
+    <path class="mark-area" d="${line}L${x(pts[pts.length - 1].t)},${y(0)}L${x(pts[0].t)},${y(0)}Z"/><path class="mark-line" d="${line}"/>
+    ${drop ? `<circle class="mark-dot" cx="${x(drop.t)}" cy="${y(drop.watching)}" r="5"/>
+      <text class="annot" x="${Math.min(x(drop.t) + 8, W - R - 110)}" y="${y(drop.watching) - 10}">biggest drop · ${at(drop.t)}</text>` : ""}
+    <line class="crosshair" id="retX" y1="${T}" y2="${H - B}" visibility="hidden"/>
+    <rect class="hit" x="${L}" y="0" width="${W - L - R}" height="${H}"/></svg>`;
+  const svg = el.querySelector("svg"), hit = svg.querySelector(".hit");
+  hit.onmousemove = e => {
+    const t = Math.max(0, Math.min(1, (e.offsetX - L) / (W - L - R)));
+    const p = pts.reduce((a, b) => Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a);
+    const xl = svg.querySelector("#retX"); xl.setAttribute("x1", x(p.t)); xl.setAttribute("x2", x(p.t)); xl.setAttribute("visibility", "visible");
+    showTip(`<b>${secs ? at(p.t) : Math.round(p.t * 100) + "%"}</b><br>${Math.round(p.watching * 100)}% still watching<br>`
+      + `${p.relative >= 0.55 ? "Above" : p.relative <= 0.45 ? "Below" : "About"} typical for similar-length videos`, e.clientX, e.clientY);
+  };
+  hit.onmouseleave = () => { hideTip(); svg.querySelector("#retX").setAttribute("visibility", "hidden"); };
+  const rel = pts.reduce((a, p) => a + p.relative, 0) / pts.length;
+  const end = pts[pts.length - 1].watching;
+  note.textContent = `${vid ? vid.title.slice(0, 50) + " · " : ""}${Math.round(end * 100)}% reach the end · `
+    + `${rel >= 0.55 ? "above" : rel <= 0.45 ? "below" : "about"} typical retention for similar-length videos`
+    + (drop ? ` · biggest drop at ${at(drop.t)}` : "");
+}
+addEventListener("resize", () => { if (tab === "me" && M?.updated) { clearTimeout(drawCharts.t); drawCharts.t = setTimeout(() => drawCharts(diagnose()), 150); } });
 
 $("meView").onclick = async e => {
   const r = e.target.closest("[data-me-refresh]");
@@ -1032,6 +1311,10 @@ $("meView").onclick = async e => {
   const add = e.target.closest("[data-add-ch]");
   if (add) { add.disabled = true; await api("/api/channels", { method: "POST", body: { input: add.dataset.addCh, group: "Adjacent" } }); renderMeView(); }
 };
+$("meView").addEventListener("click", e => {
+  const row = e.target.closest("[data-open]");
+  if (row && !e.target.closest("a, button")) openVideo(row.dataset.open);
+});
 $("meView").onchange = e => {
   if (e.target.matches("[data-me-sort]")) { meSort = e.target.value; renderMeView(); }
   if (e.target.matches("[data-me-auto]")) try { localStorage.setItem("meAutoRefresh", e.target.checked ? "1" : "0"); } catch {}
