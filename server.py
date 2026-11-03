@@ -99,6 +99,10 @@ CREATE TABLE IF NOT EXISTS keywords (
     pillar TEXT DEFAULT '',
     active INTEGER DEFAULT 1
 );
+CREATE TABLE IF NOT EXISTS forgotten (
+    video_id TEXT PRIMARY KEY,
+    killed_at TEXT
+);
 CREATE TABLE IF NOT EXISTS kv (
     key TEXT PRIMARY KEY,
     value TEXT,
@@ -122,7 +126,9 @@ SIGNAL_COLUMNS = {
     "channel_title": "TEXT",
     "subscribers": "INTEGER",
     "published_at": "TEXT",  # exact publish time, for views per hour
+    "killed_at": "TEXT",     # when it was killed; killed cards expire KILL_EXPIRY_DAYS later
 }
+KILL_EXPIRY_DAYS = 30
 
 scout_state = {"running": False, "last_run": None, "message": "", "error": None, "units": 0, "progress": None}
 write_lock = threading.Lock()
@@ -170,7 +176,10 @@ def api_error(e):
 
 def save_signal(conn, v, r, source, stamp):
     """Insert a passed video; on re-finds refresh numbers but keep status and source.
-    Returns 1 if the video is new to the board."""
+    Expired kills (in `forgotten`) are never re-added by scouts. Returns 1 if the video
+    is new to the board."""
+    if conn.execute("SELECT 1 FROM forgotten WHERE video_id=?", (v["id"],)).fetchone():
+        return 0
     is_new = not conn.execute("SELECT 1 FROM signals WHERE video_id=?", (v["id"],)).fetchone()
     conn.execute(
         "INSERT INTO signals (video_id, channel_id, title, url, published, views, score, min_score,"
@@ -415,6 +424,8 @@ def add_pasted_video(text):
     the whole playlist."""
     key = of.load_key()
     vid = video_id_from(text)
+    with write_lock, db() as conn:  # pasting a link on purpose overrides an earlier expired kill
+        conn.execute("DELETE FROM forgotten WHERE video_id=?", (vid,))
     with db() as conn:
         if conn.execute("SELECT 1 FROM signals WHERE video_id=?", (vid,)).fetchone():
             return "Already on the board"
@@ -453,7 +464,18 @@ def resolve_channel(text, key):
     return ch["id"], ch["snippet"]["title"], int(ch["statistics"].get("subscriberCount", 0))
 
 
+def expire_killed():
+    """Killed cards disappear KILL_EXPIRY_DAYS after the kill. Their IDs go into `forgotten`
+    so a later scout doesn't bring them back as New."""
+    cutoff = f"julianday('now') - julianday(killed_at) > {KILL_EXPIRY_DAYS}"
+    with write_lock, db() as conn:
+        conn.execute(f"INSERT OR IGNORE INTO forgotten (video_id, killed_at) SELECT video_id, killed_at"
+                     f" FROM signals WHERE status = 'Killed' AND {cutoff}")
+        conn.execute(f"DELETE FROM signals WHERE status = 'Killed' AND {cutoff}")
+
+
 def state():
+    expire_killed()
     with db() as conn:
         channels = [dict(r) for r in conn.execute("SELECT * FROM channels ORDER BY grp, title")]
         signals = [dict(r) for r in conn.execute(
@@ -469,7 +491,7 @@ def state():
             " GROUP BY d.id HAVING hits >= ? OR best_ratio >= ?"
             " ORDER BY hits DESC, best_ratio DESC", (SUGGEST_MIN_HITS, SUGGEST_STRONG_RATIO))]
     return {"channels": channels, "signals": signals, "keywords": keywords, "suggested": suggested,
-            "scout": scout_state, "lookback_days": LOOKBACK_DAYS}
+            "scout": scout_state, "lookback_days": LOOKBACK_DAYS, "kill_expiry_days": KILL_EXPIRY_DAYS}
 
 
 # --- http ------------------------------------------------------------------
@@ -617,7 +639,8 @@ class Handler(BaseHTTPRequestHandler):
                 if status not in STATUSES:
                     return self.send_json({"error": "bad status"}, 400)
                 with write_lock, db() as conn:
-                    conn.execute("UPDATE signals SET status=? WHERE video_id=?", (status, parts[2]))
+                    conn.execute("UPDATE signals SET status=?, killed_at=? WHERE video_id=?",
+                                 (status, now_iso() if status == "Killed" else None, parts[2]))
                 return self.send_json(state())
 
             if parts == ["api", "channels"]:
@@ -721,5 +744,7 @@ if __name__ == "__main__":
     init_db()
     backfill_published_at()
     apply_current_bars()
+    with write_lock, db() as conn:  # cards killed before kills had a date start their 30 days now
+        conn.execute("UPDATE signals SET killed_at=? WHERE status='Killed' AND killed_at IS NULL", (now_iso(),))
     print(f"Outlier Lab running at http://localhost:{PORT}")
     ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()

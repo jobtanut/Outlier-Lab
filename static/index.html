@@ -767,6 +767,14 @@ function scoreMath(s) {
     + ` · needs ${s.min_score}× at ${fmt(s.subscribers)} subs`;
 }
 
+// Killed cards expire (server deletes them) kill_expiry_days after the kill
+function killedPill(s) {
+  if (s.status !== "Killed" || !s.killed_at) return "";
+  const left = Math.max(0, Math.ceil((S.kill_expiry_days || 30) - (Date.now() - new Date(s.killed_at)) / 864e5));
+  return `<span class="pill" title="Killed ${new Date(s.killed_at).toLocaleDateString()}. Back to New (U) keeps it.">`
+    + `Disappears in ${left} day${left === 1 ? "" : "s"}</span>`;
+}
+
 function card(s, i) {
   const ratio = s.score / s.min_score;
   const actions = s.status === "New"
@@ -794,6 +802,7 @@ function card(s, i) {
       <div class="meta">
         ${fitPill(s)}
         <span><b>${fmtRate(vph(s))}</b> views/hr</span>
+        ${killedPill(s)}
         ${ageDays(s) > OUTDATED_DAYS ? `<span class="pill outdated">Outdated</span>` : ""}
         ${ratio >= 2 ? `<span class="pill strong">${ratio.toFixed(1)}× over bar</span>` : ""}
       </div>
