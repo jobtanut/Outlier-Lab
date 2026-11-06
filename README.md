@@ -109,6 +109,8 @@ Open **http://localhost:8765**. On first run the database (`data/scout.db`) is c
 | Port | `SCOUT_PORT` env var | `8765` |
 | Database file | `SCOUT_DB` env var | `./data/scout.db` |
 | Candidate age window | `SCOUT_LOOKBACK_DAYS` env var | `90` days |
+| Topic/format search window (publish date) | `SEARCH_DAYS` in `outlier_lab/discover.py` | `21` days |
+| Search pre-filter (views ÷ subscribers) | `BREAKOUT_VIEWS_PER_SUB` in `outlier_lab/discover.py` | `1×` |
 | Pass bars by subscriber tier | `BAR_TIERS` in `outlier_lab/outlier_filter.py` | 3× / 5× / 10× |
 | Baseline window and size | `WINDOW_DAYS`, `BASELINE_SIZE` in `outlier_lab/outlier_filter.py` | 180 days, 30 videos |
 | Shorts cut-off | `SHORTS_MAX_SECONDS` in `outlier_lab/outlier_filter.py` | 180 s |

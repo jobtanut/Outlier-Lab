@@ -4,6 +4,8 @@ Two stages, so search finds pass the same gate as competitor videos:
 
   1. Pre-filter (cheap, from search data): long-form, 7..lookback days old,
      views >= BREAKOUT_VIEWS_PER_SUB x the channel's subscribers.
+     Searches ask YouTube for medium-length videos (4-20 min) only, so results
+     aren't spent on Shorts we would throw away.
   2. Real gate: work out that channel's same-period average (outlier_filter.score_channel)
      and keep the video only if it passes its bar (3x / 5x / 10x by channel size).
 """
@@ -11,15 +13,23 @@ from datetime import datetime, timedelta, timezone
 
 from . import outlier_filter as of
 
-SEARCH_RESULTS = 25
-BREAKOUT_VIEWS_PER_SUB = 2.0
+SEARCH_RESULTS = 50  # a search costs 100 units whether it returns 25 or 50
+# Searches only ask for videos published in the last SEARCH_DAYS. Over the full lookback the
+# "most viewed" top 25 barely changes between runs, so repeat runs paid 100 units a keyword to
+# re-find the same cards; a short rolling window shows fresh videos each run instead.
+# 21 days, because videos under MIN_AGE_DAYS (7) can't be judged yet: this leaves two weeks
+# of judgeable videos per run.
+SEARCH_DAYS = 21
+# 1x (not 2x): a 1-3 week old video with views equal to its channel's subscribers is already
+# a strong sign; 2x let almost nothing through to the real check.
+BREAKOUT_VIEWS_PER_SUB = 1.0
 MAX_CANDIDATE_CHANNELS = 40  # caps stage-2 quota (~2-12 units per channel)
 
 
 def search(term, lang, key, lookback):
-    after = (datetime.now(timezone.utc) - timedelta(days=lookback)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    after = (datetime.now(timezone.utc) - timedelta(days=min(lookback, SEARCH_DAYS))).strftime("%Y-%m-%dT%H:%M:%SZ")
     params = {"part": "snippet", "type": "video", "q": term, "order": "viewCount",
-              "publishedAfter": after, "maxResults": SEARCH_RESULTS}
+              "publishedAfter": after, "maxResults": SEARCH_RESULTS, "videoDuration": "medium"}
     if lang == "TH":
         params.update(regionCode="TH", relevanceLanguage="th")
     else:
@@ -50,8 +60,9 @@ def channel_info(ids, key):
     return out
 
 
-def find_candidates(keywords, key, lookback, skip_channels, progress=lambda msg, frac=None: None):
-    """Stage 1. keywords: [(term, lang)]. Returns {video_id: video dict + keyword/channel info}."""
+def find_candidates(keywords, key, lookback, skip_channels, progress=lambda msg, frac=None: None, stats=None):
+    """Stage 1. keywords: [(term, lang)]. Returns {video_id: video dict + keyword/channel info}.
+    `stats` (a dict) gets the funnel counts: results, judged (long-form, old enough), checked."""
     found = {}
     for i, (term, lang) in enumerate(keywords, 1):
         progress(f"Searching “{term}” ({i}/{len(keywords)})", 0.5 * (i - 1) / len(keywords))
@@ -69,6 +80,8 @@ def find_candidates(keywords, key, lookback, skip_channels, progress=lambda msg,
         title, subs = channels[v["channel_id"]]
         if subs and v["views"] >= BREAKOUT_VIEWS_PER_SUB * subs:
             candidates[v["id"]] = {**v, "keyword": found[v["id"]], "channel_title": title, "subscribers": subs}
+    if stats is not None:
+        stats.update(results=len(found), judged=len(videos), checked=len(candidates))
     return candidates
 
 

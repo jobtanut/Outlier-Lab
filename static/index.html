@@ -213,7 +213,14 @@
   .run .scope { appearance: none; -webkit-appearance: none; border: 0; border-left: 1px solid rgba(255,255,255,.35);
     border-radius: 0 8px 8px 0; color: #fff; font-weight: 500; font-size: 12px; padding: 0 30px 0 14px; cursor: pointer;
     background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='white' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 12px center; }
-  .run .scope option { color: var(--text); background: var(--surface); padding: 6px 10px; }
+  .run .scope { white-space: nowrap; }
+  .scope-menu { position: fixed; z-index: 25; min-width: 230px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 6px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+  .scope-head { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; padding: 4px 8px 6px; }
+  .scope-menu label { display: flex; gap: 10px; align-items: flex-start; padding: 7px 8px; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 500; }
+  .scope-menu label:hover { background: var(--surface-2); }
+  .scope-menu input { margin-top: 3px; accent-color: var(--accent); }
+  .scope-menu small { display: block; color: var(--muted); font-size: 11.5px; font-weight: 400; }
   .run .scope:disabled { opacity: .6; }
   .btn.primary:disabled { opacity: .6; cursor: wait; }
   .status-line { max-width: 1400px; margin: 0 auto; padding: 0 20px 10px; color: var(--muted); font-size: 12px; display: flex; gap: 14px; flex-wrap: wrap; }
@@ -321,12 +328,8 @@
     <div class="tabs" id="tabs"></div>
     <div class="run">
       <button class="btn primary" id="runScout">Run scout</button>
-      <select class="scope" id="scoutScope" aria-label="What to scout" title="What to scout">
-        <option value="all">All</option>
-        <option value="channels">Channels</option>
-        <option value="keywords">Topics</option>
-        <option value="formats">Formats</option>
-      </select>
+      <button class="scope" id="scoutScope" aria-haspopup="true" aria-expanded="false" aria-controls="scopeMenu"
+        title="What to scout"><span id="scopeLabel">All</span></button>
     </div>
     <button class="icon-btn" id="toggleAdd" aria-expanded="false" aria-controls="addPanel" title="Add a video by link">
       <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
@@ -423,6 +426,13 @@
 </main>
 
 <div class="charttip" id="chartTip" hidden></div>
+<!-- Run scout ▾ menu: lives at body level (position: fixed) so it never affects the one-line header fit -->
+<div class="scope-menu" id="scopeMenu" role="menu" hidden>
+  <div class="scope-head">What to scout</div>
+  <label><input type="checkbox" value="channels" checked><span>Channels<small>your watchlist · ~5 units each</small></span></label>
+  <label><input type="checkbox" value="keywords" checked><span>Topics<small>topic keywords · ~100 units each</small></span></label>
+  <label><input type="checkbox" value="formats" checked><span>Formats<small>title formats · ~100 units each</small></span></label>
+</div>
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer" aria-label="Channels and keywords">
   <header><h3>Channels &amp; keywords</h3><button class="btn" id="closeWatch">Close</button></header>
@@ -685,7 +695,8 @@ function render() {
   $("jobPct").textContent = sc.running && sc.progress != null ? `${Math.round(sc.progress * 100)}%` : "";
   $("stopJob").disabled = !!sc.cancel;
   $("stopJob").textContent = sc.cancel ? "Stopping…" : "■ Stop";
-  $("runScout").disabled = $("scoutScope").disabled = !!sc.running;
+  $("scoutScope").disabled = !!sc.running;
+  $("runScout").disabled = !!sc.running || !selectedScopes().length;
   $("runScout").textContent = sc.running ? "Scouting…" : "Run scout";
   const active = S.channels.filter(c => c.active).length;
   const kws = S.keywords.filter(k => k.active).length;
@@ -695,7 +706,8 @@ function render() {
       : "Not run yet",
     sc.error ? `<span class="err">${esc(sc.error)}</span>` : ""
   ].filter(Boolean).join(" · ");
-  $("rules").textContent = `${active} channels · ${kws} keywords · last ${S.lookback_days} days · `
+  $("rules").textContent = `${active} channels · ${kws} keywords · watchlist: last ${S.lookback_days} days, `
+    + `searches: last ${S.search_days} days · `
     + `bar 3× at 300K+ subs, 5× at 100K+, 10× below`;
   $("filterCount").textContent = [$("srcFilter").value, $("chFilter").value].filter(Boolean).length + activeRanges() || "";
 
@@ -872,11 +884,8 @@ function fitBar() {
     if (bar.scrollWidth <= bar.clientWidth) break;
     bar.classList.add(step);
   }
-  const scope = $("scoutScope");
-  scope.title = "Scout: " + scope.options[scope.selectedIndex].text;
 }
 new ResizeObserver(fitBar).observe(document.querySelector("header .bar"));
-$("scoutScope").addEventListener("change", fitBar);
 
 function setPanel(open) {
   $("filterPanel").hidden = !open;
@@ -943,11 +952,39 @@ $("grid").onclick = e => {
   const b = e.target.closest("[data-act]");
   if (b) setStatus(c.dataset.id, b.dataset.act); else render();
 };
+// --- Run scout ▾: tick any mix of Channels / Topics / Formats ---
+const SCOPE_NAMES = { channels: "Channels", keywords: "Topics", formats: "Formats" };
+const scopeBoxes = () => [...$("scopeMenu").querySelectorAll("input")];
+const selectedScopes = () => scopeBoxes().filter(i => i.checked).map(i => i.value);
+function updateScope() {
+  const s = selectedScopes();
+  const text = s.length === 3 ? "All" : s.length ? s.map(k => SCOPE_NAMES[k]).join(" + ") : "None";
+  $("scopeLabel").textContent = text;
+  $("scoutScope").title = "Scout: " + text;
+  $("runScout").disabled = !!S.scout?.running || !s.length;
+  try { localStorage.setItem("scoutScopes", JSON.stringify(s)); } catch {}
+  fitBar();
+}
+function setScopeMenu(open) {
+  const m = $("scopeMenu"), r = $("scoutScope").getBoundingClientRect();
+  m.hidden = !open; $("scoutScope").setAttribute("aria-expanded", open);
+  if (open) { m.style.top = `${r.bottom + 6}px`; m.style.right = `${Math.max(8, innerWidth - r.right)}px`; }
+}
+$("scoutScope").onclick = e => { e.stopPropagation(); setScopeMenu($("scopeMenu").hidden); };
+$("scopeMenu").onchange = updateScope;
+document.addEventListener("click", e => { if (!$("scopeMenu").hidden && !$("scopeMenu").contains(e.target)) setScopeMenu(false); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") setScopeMenu(false); });
+addEventListener("resize", () => setScopeMenu(false));
 $("runScout").onclick = async () => {
-  try { localStorage.setItem("scoutScope", $("scoutScope").value); } catch {}
-  await api("/api/scout", { method: "POST", body: { scope: $("scoutScope").value } }); startPoll();
+  setScopeMenu(false);
+  await api("/api/scout", { method: "POST", body: { scopes: selectedScopes() } }); startPoll();
 };
-try { $("scoutScope").value = localStorage.getItem("scoutScope") || "all"; } catch {}
+try {  // remember the ticks; carry over the old single-choice setting once
+  const saved = JSON.parse(localStorage.getItem("scoutScopes") || "null")
+    ?? ({ all: null, channels: ["channels"], keywords: ["keywords"], formats: ["formats"] })[localStorage.getItem("scoutScope")];
+  if (saved) scopeBoxes().forEach(i => i.checked = saved.includes(i.value));
+} catch {}
+updateScope();
 
 
 // --- My channel view: your own outliers + Studio stats + audience profile ---

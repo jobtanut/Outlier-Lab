@@ -32,7 +32,7 @@ LOOKBACK_DAYS = int(os.environ.get("SCOUT_LOOKBACK_DAYS", 90))
 STATUSES = ("New", "Promoted", "Parked", "Killed")
 GROUPS = ("Direct", "Adjacent", "Global")
 LANGS = ("TH", "EN")
-SCOUT_SCOPES = ("all", "channels", "keywords", "formats")
+SCOUT_SCOPES = ("channels", "keywords", "formats")  # any mix can be scouted in one run
 OUTDATED_DAYS = 365  # matches OUTDATED_DAYS in static/index.html
 # An off-watchlist channel is suggested after this many outliers,
 # or one outlier at least this many times its pass bar
@@ -214,14 +214,16 @@ def sweep_watchlist(key, progress):
 
 
 def search_keywords(key, progress, kind):
-    """kind 'topic' (cards tagged Search) or 'format' (cards tagged Format)."""
+    """kind 'topic' (cards tagged Search) or 'format' (cards tagged Format).
+    Returns (keywords searched, new cards, funnel stats from discover.find_candidates)."""
     with db() as conn:
         keywords = [(k["term"], k["lang"]) for k in conn.execute(
             "SELECT term, lang FROM keywords WHERE active = 1 AND kind = ?", (kind,))]
         watched = {r["id"] for r in conn.execute("SELECT id FROM channels")}
+    stats = {}
     if not keywords:
-        return 0, 0
-    candidates = discover.find_candidates(keywords, key, LOOKBACK_DAYS, watched, progress)
+        return 0, 0, stats
+    candidates = discover.find_candidates(keywords, key, LOOKBACK_DAYS, watched, progress, stats)
     added = 0
     for r, v in discover.gate_candidates(candidates, key, LOOKBACK_DAYS, progress):
         stamp = now_iso()
@@ -236,7 +238,12 @@ def search_keywords(key, progress, kind):
                  r["baseline_videos"], r["min_score"], stamp))
             if v:
                 added += save_signal(conn, v, r, SOURCE_FOR_KIND[kind], stamp)
-    return len(keywords), added
+    return len(keywords), added, stats
+
+
+def funnel(stats):
+    """' (300 results → 120 judged → 18 checked)' for the run summary, so 0 new is explainable."""
+    return f" ({stats['results']} results → {stats['judged']} judged → {stats['checked']} checked)" if stats else ""
 
 
 class JobCancelled(BaseException):
@@ -263,7 +270,7 @@ def progress_reporter(start=0.0, span=1.0):
 PHASE_WEIGHT = {"channels": 1, "topic": 4, "format": 4}
 
 
-def scout_thread(scope):
+def scout_thread(scopes):
     """scope: 'all', 'channels' (watchlist sweep), 'keywords' (topic search) or 'formats'."""
     of.QUOTA["units"] = 0
     with db() as conn:
@@ -271,8 +278,8 @@ def scout_thread(scope):
         for kind in KINDS:
             counts[kind] = conn.execute("SELECT COUNT(*) FROM keywords WHERE active = 1 AND kind = ?",
                                         (kind,)).fetchone()[0]
-    phases = [p for p, on in (("channels", scope in ("all", "channels")), ("topic", scope in ("all", "keywords")),
-                              ("format", scope in ("all", "formats"))) if on]
+    phases = [p for p, on in (("channels", "channels" in scopes), ("topic", "keywords" in scopes),
+                              ("format", "formats" in scopes)) if on]
     weights = {p: counts[p] * PHASE_WEIGHT[p] for p in phases}
     total = sum(weights.values()) or 1
     spans, start = {}, 0.0
@@ -286,11 +293,11 @@ def scout_thread(scope):
             n_ch, from_watch = sweep_watchlist(key, spans["channels"])
             parts.append(f"{n_ch} channels scanned, {from_watch} new")
         if "topic" in spans:
-            n_kw, from_search = search_keywords(key, spans["topic"], "topic")
-            parts.append(f"{n_kw} topics searched, {from_search} new")
+            n_kw, from_search, st = search_keywords(key, spans["topic"], "topic")
+            parts.append(f"{n_kw} topics searched, {from_search} new{funnel(st)}")
         if "format" in spans:
-            n_fm, from_format = search_keywords(key, spans["format"], "format")
-            parts.append(f"{n_fm} formats searched, {from_format} new")
+            n_fm, from_format, st = search_keywords(key, spans["format"], "format")
+            parts.append(f"{n_fm} formats searched, {from_format} new{funnel(st)}")
         scout_state.update(progress=1.0)
         scout_state.update(error=None, message=" · ".join(parts))
     except JobCancelled:
@@ -491,7 +498,8 @@ def state():
             " GROUP BY d.id HAVING hits >= ? OR best_ratio >= ?"
             " ORDER BY hits DESC, best_ratio DESC", (SUGGEST_MIN_HITS, SUGGEST_STRONG_RATIO))]
     return {"channels": channels, "signals": signals, "keywords": keywords, "suggested": suggested,
-            "scout": scout_state, "lookback_days": LOOKBACK_DAYS, "kill_expiry_days": KILL_EXPIRY_DAYS}
+            "scout": scout_state, "lookback_days": LOOKBACK_DAYS, "search_days": discover.SEARCH_DAYS,
+            "kill_expiry_days": KILL_EXPIRY_DAYS}
 
 
 # --- http ------------------------------------------------------------------
@@ -585,12 +593,17 @@ class Handler(BaseHTTPRequestHandler):
         parts = self.path.strip("/").split("/")
         try:
             if parts == ["api", "scout"]:
-                scope = self.body().get("scope", "all")
-                if scope not in SCOUT_SCOPES:
-                    return self.send_json({"error": "bad scope"}, 400)
+                b = self.body()
+                # "scopes": any of channels/keywords/formats; the older single "scope" ("all" or one) still works
+                if "scopes" in b:  # an explicit empty list is refused below, never read as "all"
+                    scopes = set(b["scopes"] or [])
+                else:
+                    scopes = {b["scope"]} if b.get("scope") not in (None, "all") else set(SCOUT_SCOPES)
+                if not scopes or not scopes <= set(SCOUT_SCOPES):
+                    return self.send_json({"error": "Pick at least one of Channels, Topics or Formats"}, 400)
                 if not scout_state["running"]:
                     scout_state.update(running=True, error=None, progress=0, cancel=False, message="Starting…")
-                    threading.Thread(target=scout_thread, args=(scope,), daemon=True).start()
+                    threading.Thread(target=scout_thread, args=(scopes,), daemon=True).start()
                 return self.send_json(state())
 
             if parts == ["api", "videos"]:
